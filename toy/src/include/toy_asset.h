@@ -1,0 +1,158 @@
+#pragma once
+
+#include "toy_platform.h"
+#include "toy_allocator.h"
+#include <stdint.h>
+
+
+typedef struct toy_asset_pool_t toy_asset_pool_t, *toy_asset_pool_p;
+
+typedef void (*toy_destroy_asset_fp) (toy_asset_pool_p asset_pool, void* asset);
+
+
+typedef struct toy_asset_pool_chunk_t toy_asset_pool_chunk_t, *toy_asset_pool_chunk_p;
+typedef struct toy_asset_pool_t {
+	toy_asset_pool_chunk_p* chunks;
+	uint32_t chunk_count;
+	uint32_t chunk_block_count; // block count of each chunk, NOT total count
+	size_t asset_size;
+	size_t asset_alignment;
+	toy_allocator_t chunk_alc;
+	toy_allocator_t alc;
+	toy_destroy_asset_fp destroy_fp;
+	void* context;
+	const char* literal_name; // Just a pointer, not a copy
+}toy_asset_pool_t, *toy_asset_pool_p;
+
+
+typedef struct toy_asset_pool_item_ref_t {
+	toy_asset_pool_p pool;
+	uint32_t index;
+	uint32_t next_ref;
+}toy_asset_pool_item_ref_t;
+
+typedef struct toy_asset_item_ref_pool_t {
+	toy_asset_pool_item_ref_t* refs;
+	uint32_t pool_length;
+	uint32_t next_block;
+	toy_allocator_t alc;
+}toy_asset_item_ref_pool_t;
+
+
+typedef struct toy_asset_pool_data_ref_t {
+	void* data;
+	uint32_t ref_count;
+	uint32_t next;
+}toy_asset_pool_data_ref_t;
+
+typedef struct toy_asset_data_ref_pool_t {
+	toy_asset_pool_data_ref_t* refs;
+	uint32_t pool_length;
+	uint32_t next_block;
+	toy_allocator_t alc;
+}toy_asset_data_ref_pool_t;
+
+
+typedef struct toy_stage_data_block_t {
+	void* data;
+	size_t size;
+	size_t alignment;
+}toy_stage_data_block_t;
+
+
+typedef struct toy_built_in_vertex_t {
+	float position[3];
+	float tex_coord[2];
+	float normal[3];
+}toy_built_in_vertex_t;
+
+
+typedef struct toy_host_mesh_primitive_t {
+	void* attributes;
+	size_t attribute_size;
+
+	void* indices;
+	size_t index_size;
+
+	uint32_t vertex_count;
+	uint32_t index_count;
+}toy_host_mesh_primitive_t;
+
+
+typedef struct toy_mesh_t {
+	toy_asset_item_ref_pool_t* ref_pool;
+	toy_asset_pool_item_ref_t first_primitive;
+	uint32_t primitive_count;
+}toy_mesh_t;
+
+
+TOY_EXTERN_C_START
+
+void toy_init_asset_pool (
+	size_t asset_size,
+	size_t asset_alignment,
+	toy_destroy_asset_fp destroy_asset_fp,
+	const toy_allocator_t* chunk_alc,
+	const toy_allocator_t* alc,
+	void* context,
+	const char* literal_name,
+	toy_asset_pool_t* output
+);
+
+void toy_destroy_asset_pool (
+	const toy_allocator_t* alc,
+	toy_asset_pool_p pool
+);
+
+void* toy_get_asset_item (toy_asset_pool_p pool, uint32_t index);
+
+toy_inline void* toy_get_asset_item2 (toy_asset_pool_item_ref_t* ref) {
+	return toy_get_asset_item(ref->pool, ref->index);
+}
+
+uint32_t toy_alloc_asset_item (
+	toy_asset_pool_p pool,
+	toy_error_t* error
+);
+
+// Free asset item
+void toy_raw_free_asset_item (
+	toy_asset_pool_p pool,
+	uint32_t index
+);
+
+// Destroy and free asset item
+void toy_free_asset_item (
+	toy_asset_pool_p pool,
+	uint32_t index
+);
+
+uint32_t toy_add_asset_ref (toy_asset_pool_p pool, uint32_t index, uint32_t ref_count);
+
+uint32_t toy_sub_asset_ref (toy_asset_pool_p pool, uint32_t index, uint32_t ref_count);
+
+uint32_t toy_get_asset_ref (toy_asset_pool_p pool, uint32_t index);
+
+void toy_create_asset_item_ref_pool (
+	uint32_t initial_length,
+	const toy_allocator_t* alc,
+	toy_asset_item_ref_pool_t* output,
+	toy_error_t* error
+);
+
+void toy_destroy_asset_ref_pool (toy_asset_item_ref_pool_t* ref_pool);
+
+// return UINT32_MAX when failed
+uint32_t toy_alloc_asset_item_ref (toy_asset_item_ref_pool_t* ref_pool);
+
+void toy_free_asset_item_ref (toy_asset_item_ref_pool_t* ref_pool, uint32_t index);
+
+toy_inline toy_asset_pool_item_ref_t* toy_get_asset_item_ref (toy_asset_item_ref_pool_t* ref_pool, uint32_t index) {
+	return &ref_pool->refs[index];
+}
+
+toy_inline toy_asset_pool_item_ref_t* toy_get_next_asset_item_ref (toy_asset_item_ref_pool_t* ref_pool, toy_asset_pool_item_ref_t* ref) {
+	return ref->next_ref >= ref_pool->pool_length ? NULL : &ref_pool->refs[ref->next_ref];
+}
+
+TOY_EXTERN_C_END

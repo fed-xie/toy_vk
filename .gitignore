@@ -1,0 +1,11 @@
+.vs
+x64/
+x86/
+
+toy/libs/*.dll
+toy/libs/*.lib
+toy/libs/*.exp
+toy/libs/*.so
+toy/assets/SPIR_V/*.spv
+toy/x64/
+toy/x86/
