@@ -5,6 +5,8 @@
 void toy_create_vulkan_buffer (
 	VkDevice dev,
 	VkBufferUsageFlags buffer_usage,
+	const VkMemoryPropertyFlags* property_flags,
+	uint32_t flag_count,
 	VkDeviceSize size,
 	const VkPhysicalDeviceMemoryProperties* mem_props,
 	toy_vulkan_binding_allocator_t* binding_alc,
@@ -12,20 +14,6 @@ void toy_create_vulkan_buffer (
 	toy_vulkan_buffer_t* output,
 	toy_error_t* error)
 {
-	VkMemoryPropertyFlags recommended_flags = 0;
-	VkMemoryPropertyFlags required_flags = 0;
-	if (buffer_usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
-		recommended_flags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-	if (buffer_usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT)
-		recommended_flags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-	if (buffer_usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) {
-		recommended_flags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-		required_flags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-	}
-	TOY_ASSERT(0 != recommended_flags);
-
-	VkMemoryPropertyFlags property_flags[] = { recommended_flags, required_flags };
-
 	VkBufferCreateInfo buffer_ci;
 	buffer_ci.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	buffer_ci.pNext = NULL;
@@ -48,7 +36,7 @@ void toy_create_vulkan_buffer (
 
 	toy_bind_vulkan_buffer_memory(
 		dev, buffer_handle, &req,
-		property_flags, sizeof(property_flags)/sizeof(*property_flags),
+		property_flags, flag_count,
 		mem_props, binding_alc,
 		&output->binding,
 		error);

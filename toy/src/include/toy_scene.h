@@ -9,20 +9,18 @@
 #include <stdint.h>
 
 
+
 typedef struct toy_scene_t {
 	struct toy_scene_t* prev;
 	struct toy_scene_t* next;
 	uint32_t scene_id;
 
-	toy_asset_pool_t object_refs;
+	toy_fmat4x4_t inst_matrices[128];
+	uint32_t mesh_primitives[128];
+	uint32_t object_ids[128];
+	uint32_t object_count;
 
-	toy_scene_entity_chunk_descriptor_t* chunk_descs;
-
-	toy_scene_camera_t* cameras;
-	uint32_t camera_count;
-
-	// private
-	//toy_asset_item_ref_pool_t meshes;
+	toy_scene_camera_t main_camera;
 
 	toy_memory_allocator_t* alc;
 }toy_scene_t;
@@ -41,23 +39,5 @@ toy_scene_t* toy_create_scene (
 void toy_destroy_scene (
 	toy_scene_t* scene
 );
-
-toy_scene_entity_chunk_descriptor_t* toy_add_scene_entity_descriptor (
-	toy_scene_t* scene,
-	toy_create_scene_entity_chunk_descriptor_fp create_desc_fp
-);
-
-uint32_t toy_create_scene_entity (
-	toy_scene_t* scene,
-	toy_scene_entity_chunk_descriptor_t* chunk_desc
-);
-
-void toy_destroy_scene_entity (toy_scene_t* scene, toy_entity_ref_t* ref);
-
-toy_inline void toy_destroy_scene_entity2 (toy_scene_t* scene, uint32_t object_id) {
-	toy_destroy_scene_entity(scene, (toy_entity_ref_t*)toy_get_asset_item(&scene->object_refs, object_id));
-}
-
-uint32_t toy_new_scene_camera (toy_scene_t* scene);
 
 TOY_EXTERN_C_END

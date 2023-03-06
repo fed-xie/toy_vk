@@ -1,4 +1,4 @@
-#include "toy_vulkan_asset_loader.h"
+#include "../../include/platform/vulkan/toy_vulkan_asset_loader.h"
 
 #include "../../include/toy_log.h"
 #include "../../toy_assert.h"
@@ -119,9 +119,16 @@ void toy_create_vulkan_asset_loader (
 
 	output->vk_alc = vk_alc;
 
+	const VkMemoryPropertyFlags property_flags[] = {
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+	};
+	const uint32_t flag_count = sizeof(property_flags) / sizeof(*property_flags);
 	toy_create_vulkan_buffer(
-		dev, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		uniform_size, &vk_device->physical_device.memory_properties,
+		dev,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		property_flags, flag_count, uniform_size,
+		&vk_device->physical_device.memory_properties,
 		&vk_alc->vk_list_alc, vk_alc->vk_alc_cb_p,
 		&output->stage_stack.buffer,
 		error);
@@ -281,27 +288,6 @@ VkResult toy_start_copy_stage_mesh_primitive_data_cmd (
 	cmd_bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	cmd_bi.pInheritanceInfo = NULL;
 	return vkBeginCommandBuffer(loader->transfer_cmd, &cmd_bi);
-}
-
-
-void toy_vkcmd_copy_stage_mesh_primitive_data (
-	toy_vulkan_asset_loader_t* loader,
-	toy_vulkan_sub_buffer_t* vbo,
-	toy_vulkan_sub_buffer_t* ibo,
-	toy_vulkan_mesh_primitive_t* dst)
-{
-	VkBufferCopy region;
-	region.srcOffset = vbo->offset;
-	region.dstOffset = dst->vbo.offset;
-	region.size = vbo->size;
-	vkCmdCopyBuffer(loader->transfer_cmd, loader->stage_stack.buffer.handle, dst->vbo.handle, 1, &region);
-
-	if (NULL != ibo && VK_NULL_HANDLE != ibo->handle) {
-		region.srcOffset = ibo->offset;
-		region.dstOffset = dst->ibo.offset;
-		region.size = ibo->size;
-		vkCmdCopyBuffer(loader->transfer_cmd, loader->stage_stack.buffer.handle, dst->ibo.handle, 1, &region);
-	}
 }
 
 

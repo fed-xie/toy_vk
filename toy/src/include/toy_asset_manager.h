@@ -6,6 +6,16 @@
 #include "toy_asset.h"
 #include "toy_file.h"
 
+#include "platform/vulkan/toy_vulkan_asset.h"
+#include "platform/vulkan/toy_vulkan_driver.h"
+#include "platform/vulkan/toy_vulkan_asset_loader.h"
+
+
+typedef struct toy_asset_manager_vulkan_private_t {
+	toy_vulkan_driver_t* vk_driver;
+	toy_vulkan_asset_loader_t vk_asset_loader;
+	toy_vulkan_mesh_primitive_asset_pool_t vk_mesh_primitive_pool;
+}toy_asset_manager_vulkan_private_t;
 
 
 typedef struct toy_asset_manager_t {
@@ -35,7 +45,7 @@ typedef struct toy_asset_manager_t {
 	toy_asset_item_ref_pool_t item_ref_pool;
 	toy_asset_data_ref_pool_t data_ref_pool;
 
-	void* mgr_private;
+	toy_asset_manager_vulkan_private_t vk_private;
 }toy_asset_manager_t;
 
 
@@ -44,7 +54,7 @@ TOY_EXTERN_C_START
 void toy_create_asset_manager (
 	size_t cache_size,
 	toy_memory_allocator_t* alc,
-	void* render_driver,
+	toy_vulkan_driver_t* vk_driver,
 	toy_asset_manager_t* output,
 	toy_error_t* error
 );
@@ -56,6 +66,13 @@ void toy_destroy_asset_manager (
 void toy_load_mesh_primitive (
 	toy_asset_manager_t* asset_mgr,
 	const toy_host_mesh_primitive_t* primitive_data,
+	toy_asset_pool_item_ref_t* output,
+	toy_error_t* error
+);
+
+void toy_load_texture2d (
+	toy_asset_manager_t* asset_mgr,
+	const char* utf8_path,
 	toy_asset_pool_item_ref_t* output,
 	toy_error_t* error
 );

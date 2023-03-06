@@ -145,6 +145,7 @@
     <ClInclude Include="src\asset\toy_gltf2.h" />
     <ClInclude Include="src\asset\toy_gltf2_loader.h" />
     <ClInclude Include="src\asset\toy_gltf2_parser.h" />
+    <ClInclude Include="src\auxiliary\shader\mesh.h" />
     <ClInclude Include="src\include\auxiliary\render_pass\main_camera.h" />
     <ClInclude Include="src\include\auxiliary\render_pass\pass_base.h" />
     <ClInclude Include="src\include\auxiliary\toy_built_in_ecs.h" />
@@ -152,6 +153,7 @@
     <ClInclude Include="src\include\auxiliary\toy_built_in_pipeline.h" />
     <ClInclude Include="src\include\platform\vulkan\toy_vulkan.h" />
     <ClInclude Include="src\include\platform\vulkan\toy_vulkan_asset.h" />
+    <ClInclude Include="src\include\platform\vulkan\toy_vulkan_asset_loader.h" />
     <ClInclude Include="src\include\platform\vulkan\toy_vulkan_buffer.h" />
     <ClInclude Include="src\include\platform\vulkan\toy_vulkan_device.h" />
     <ClInclude Include="src\include\platform\vulkan\toy_vulkan_driver.h" />
@@ -177,7 +179,6 @@
     <ClInclude Include="src\include\toy_scene.h" />
     <ClInclude Include="src\include\toy_timer.h" />
     <ClInclude Include="src\include\toy_window.h" />
-    <ClInclude Include="src\platform\vulkan\toy_vulkan_asset_loader.h" />
     <ClInclude Include="src\platform\vulkan\toy_vulkan_debug.h" />
     <ClInclude Include="src\platform\windows\toy_win_window.h" />
     <ClInclude Include="src\third_party\yyjson\yyjson.h" />
@@ -188,6 +189,7 @@
     <ClCompile Include="src\asset\toy_gltf2_parser.cpp" />
     <ClCompile Include="src\auxiliary\render_pass\main_camera.c" />
     <ClCompile Include="src\auxiliary\render_pass\pass_base.c" />
+    <ClCompile Include="src\auxiliary\shader\mesh.c" />
     <ClCompile Include="src\auxiliary\toy_built_in_ecs.cpp" />
     <ClCompile Include="src\auxiliary\toy_built_in_meshes.c" />
     <ClCompile Include="src\auxiliary\toy_built_in_pipeline.cpp" />

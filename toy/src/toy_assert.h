@@ -8,3 +8,6 @@
 #else
 #define TOY_ASSERT(x)
 #endif
+
+#define TODO_ASSERT(x) TOY_ASSERT(x)
+

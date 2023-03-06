@@ -50,6 +50,8 @@ TOY_EXTERN_C_START
 void toy_create_vulkan_buffer (
 	VkDevice dev,
 	VkBufferUsageFlags buffer_usage,
+	const VkMemoryPropertyFlags* property_flags,
+	uint32_t flag_count,
 	VkDeviceSize size,
 	const VkPhysicalDeviceMemoryProperties* mem_props,
 	toy_vulkan_binding_allocator_t* binding_alc,

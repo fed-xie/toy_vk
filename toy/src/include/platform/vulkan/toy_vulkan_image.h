@@ -13,6 +13,26 @@ typedef struct toy_vulkan_image_t {
 
 TOY_EXTERN_C_START
 
+void toy_create_vulkan_image_depth (
+	toy_vulkan_memory_allocator_p vk_allocator,
+	VkFormat format,
+	VkSampleCountFlagBits msaa_count,
+	uint32_t width,
+	uint32_t height,
+	toy_vulkan_image_t* output,
+	toy_error_t* error
+);
+
+void toy_create_vulkan_image_texture2d (
+	toy_vulkan_memory_allocator_p vk_allocator,
+	VkFormat format,
+	uint32_t width,
+	uint32_t height,
+	uint32_t mipmap_level,
+	toy_vulkan_image_t* output,
+	toy_error_t* error
+);
+
 void toy_destroy_vulkan_image (
 	VkDevice dev,
 	toy_vulkan_image_t* image,

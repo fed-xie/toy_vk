@@ -186,7 +186,7 @@ void toy_main_loop (toy_app_t* app, toy_app_loop_event_t* loop_evt)
 				&app->vk_driver.swapchain,
 				&err);
 
-			toy_draw_scene(&app->vk_driver, app->top_scene, &app->vk_built_in_pipeline, &err);
+			toy_draw_scene(&app->vk_driver, app->top_scene, &app->asset_mgr, &app->vk_built_in_pipeline, &err);
 
 			toy_present_vulkan_swapchain(
 				app->vk_driver.device.handle,

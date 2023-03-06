@@ -76,6 +76,15 @@
     <Filter Include="头文件\include\scene">
       <UniqueIdentifier>{c99a002c-c410-48af-88dc-0f4b9a097c7e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="源文件\auxiliary\shader">
+      <UniqueIdentifier>{9e2a0ff4-7c66-4e7b-8010-7a0367702fff}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\auxiliary">
+      <UniqueIdentifier>{8dae0226-54aa-4183-a37d-32a70649bc58}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\auxiliary\shader">
+      <UniqueIdentifier>{3a70cc2b-2583-4503-87c1-53c732d43890}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\include\toy.h">
@@ -171,9 +180,6 @@
     <ClInclude Include="src\include\toy_asset.h">
       <Filter>头文件\include</Filter>
     </ClInclude>
-    <ClInclude Include="src\platform\vulkan\toy_vulkan_asset_loader.h">
-      <Filter>头文件\platform\vulkan</Filter>
-    </ClInclude>
     <ClInclude Include="src\include\auxiliary\render_pass\main_camera.h">
       <Filter>头文件\include\auxiliary\render_pass</Filter>
     </ClInclude>
@@ -197,6 +203,12 @@
     </ClInclude>
     <ClInclude Include="src\include\auxiliary\render_pass\pass_base.h">
       <Filter>头文件\include\auxiliary\render_pass</Filter>
+    </ClInclude>
+    <ClInclude Include="src\include\platform\vulkan\toy_vulkan_asset_loader.h">
+      <Filter>头文件\include\platform\vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="src\auxiliary\shader\mesh.h">
+      <Filter>头文件\auxiliary\shader</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -307,6 +319,9 @@
     </ClCompile>
     <ClCompile Include="src\auxiliary\render_pass\pass_base.c">
       <Filter>源文件\auxiliary\render_pass</Filter>
+    </ClCompile>
+    <ClCompile Include="src\auxiliary\shader\mesh.c">
+      <Filter>源文件\auxiliary\shader</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

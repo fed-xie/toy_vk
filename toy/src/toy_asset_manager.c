@@ -1,19 +1,12 @@
 #include "include/toy_asset_manager.h"
 
 #include "toy_assert.h"
-#include "include/platform/vulkan/toy_vulkan_driver.h"
-#include "include/platform/vulkan/toy_vulkan_asset.h"
-#include "platform/vulkan/toy_vulkan_asset_loader.h"
 #include <string.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "third_party/stb_image.h"
 
-typedef struct toy_asset_manager_vulkan_private_t {
-	toy_vulkan_driver_t* vk_driver;
-	toy_vulkan_asset_loader_t vk_asset_loader;
-	toy_vulkan_mesh_primitive_asset_pool_t vk_mesh_primitive_pool;
-}toy_asset_manager_vulkan_private_t;
-
-static void toy_destroy_vulkan_mesh_primitive (
+static void destroy_vulkan_mesh_primitive (
 	toy_asset_pool_t* pool,
 	void* asset)
 {
@@ -23,7 +16,7 @@ static void toy_destroy_vulkan_mesh_primitive (
 	toy_free_vulkan_mesh_primitive(vk_primitive_pool, mesh_primitive);
 }
 
-static void toy_destroy_mesh (
+static void destroy_mesh (
 	toy_asset_pool_t* pool,
 	void* asset)
 {
@@ -40,11 +33,19 @@ static void toy_destroy_mesh (
 	} while (NULL != ref);
 }
 
+static void destroy_image (
+	toy_asset_pool_t* pool,
+	void* asset)
+{
+	toy_vulkan_memory_allocator_p vk_alc = pool->context;
+	toy_vulkan_image_t* image = asset;
+	toy_destroy_vulkan_image(vk_alc->device, image, vk_alc->vk_alc_cb_p);
+}
 
 void toy_create_asset_manager (
 	size_t cache_size,
 	toy_memory_allocator_t* alc,
-	void* render_driver,
+	toy_vulkan_driver_t* vk_driver,
 	toy_asset_manager_t* output,
 	toy_error_t* error)
 {
@@ -74,62 +75,66 @@ void toy_create_asset_manager (
 	if (toy_is_failed(*error))
 		goto FAIL_ITEM_REF_POOL;
 
-	toy_vulkan_driver_t* vk_driver = render_driver;
-	toy_asset_manager_vulkan_private_t* vk_private = toy_alloc_aligned(
-		&alc->buddy_alc, sizeof(toy_asset_manager_vulkan_private_t), sizeof(void*));
-	if (NULL == vk_private) {
-		toy_err(TOY_ERROR_MEMORY_HOST_ALLOCATION_FAILED, "Failed to alloc asset manager private data", error);
-		goto FAIL_PRIVATE;
-	}
-	vk_private->vk_driver = render_driver;
-	output->mgr_private = vk_private;
+	output->vk_private.vk_driver = vk_driver;
 
 	toy_create_vulkan_asset_loader(
 		&vk_driver->device,
 		16 * 1024 * 1024,
 		&vk_driver->vk_allocator,
-		&vk_private->vk_asset_loader,
+		&output->vk_private.vk_asset_loader,
 		error);
 	if (toy_is_failed(*error))
 		goto FAIL_VK_ASSET_LOADER;
 
 	toy_create_vulkan_mesh_primitive_asset_pool(
 		2 * 1024 * 1024,
+		0,
 		1024 * 1024,
+		0,
 		&vk_driver->vk_allocator,
-		&vk_private->vk_mesh_primitive_pool,
+		&output->vk_private.vk_mesh_primitive_pool,
 		error);
 	if (toy_is_failed(*error))
-		goto FAIL_VK_MESH_PRIMITIVE_ASSET_POOL;
+		goto FAIL_VK_MESH_PRIMITIVE;
 
 	toy_init_asset_pool(
 		sizeof(toy_vulkan_mesh_primitive_t),
 		sizeof(void*),
-		toy_destroy_vulkan_mesh_primitive,
+		destroy_vulkan_mesh_primitive,
 		&output->chunk_alc,
 		&alc->buddy_alc,
-		&vk_private->vk_mesh_primitive_pool,
+		&output->vk_private.vk_mesh_primitive_pool,
 		"Vulkan mesh primitive",
 		&output->asset_pools.mesh_primitive);
 
 	toy_init_asset_pool(
 		sizeof(toy_mesh_t),
 		sizeof(void*),
-		toy_destroy_mesh,
+		destroy_mesh,
 		&output->chunk_alc,
 		&alc->buddy_alc,
 		&output->item_ref_pool,
 		"Mesh",
 		&output->asset_pools.mesh);
+
+	toy_init_asset_pool(
+		sizeof(toy_vulkan_image_t),
+		sizeof(void*),
+		destroy_image,
+		&output->chunk_alc,
+		&alc->buddy_alc,
+		&output->vk_private.vk_driver->vk_allocator,
+		"Vulkan image",
+		&output->asset_pools.image);
 	
 	toy_ok(error);
 	return;
 
-FAIL_VK_MESH_PRIMITIVE_ASSET_POOL:
-	toy_destroy_vulkan_asset_loader(vk_driver->device.handle, &vk_private->vk_asset_loader);
+FAIL_VK_MESH_PRIMITIVE:
+	toy_destroy_vulkan_asset_loader(
+		output->vk_private.vk_driver->device.handle,
+		&output->vk_private.vk_asset_loader);
 FAIL_VK_ASSET_LOADER:
-	toy_free_aligned(&alc->buddy_alc, vk_private);
-FAIL_PRIVATE:
 	toy_destroy_asset_ref_pool(&output->item_ref_pool);
 FAIL_ITEM_REF_POOL:
 	toy_destroy_memory_pools(output->chunk_pools, alc);
@@ -144,14 +149,14 @@ void toy_destroy_asset_manager (
 	toy_asset_manager_t* asset_mgr)
 {
 	toy_memory_allocator_t* alc = asset_mgr->alc;
-	toy_asset_manager_vulkan_private_t* vk_private = asset_mgr->mgr_private;
 
+	toy_destroy_asset_pool(&alc->buddy_alc, &asset_mgr->asset_pools.image);
 	toy_destroy_asset_pool(&alc->buddy_alc, &asset_mgr->asset_pools.mesh_primitive);
 
-	toy_destroy_vulkan_mesh_primitive_asset_pool(&vk_private->vk_mesh_primitive_pool);
-	toy_destroy_vulkan_asset_loader(vk_private->vk_driver->device.handle, &vk_private->vk_asset_loader);
-
-	toy_free_aligned(&alc->buddy_alc, asset_mgr->mgr_private);
+	toy_destroy_vulkan_mesh_primitive_asset_pool(&asset_mgr->vk_private.vk_mesh_primitive_pool);
+	toy_destroy_vulkan_asset_loader(
+		asset_mgr->vk_private.vk_driver->device.handle,
+		&asset_mgr->vk_private.vk_asset_loader);
 
 	toy_destroy_asset_ref_pool(&asset_mgr->item_ref_pool);
 	toy_destroy_memory_pools(asset_mgr->chunk_pools, asset_mgr->alc);
@@ -160,15 +165,14 @@ void toy_destroy_asset_manager (
 
 
 
-static void toy_alloc_mesh_primitive_item (
+static void alloc_mesh_primitive_item (
 	toy_asset_manager_t* asset_mgr,
 	const toy_host_mesh_primitive_t* primitive_data,
 	toy_asset_pool_item_ref_t* output,
 	toy_error_t* error)
 {
-	toy_asset_manager_vulkan_private_t* vk_private = asset_mgr->mgr_private;
 	// Alloc asset item
-	uint32_t primitive_ref_index = toy_alloc_asset_item(
+	uint32_t primitive_index = toy_alloc_asset_item(
 		&asset_mgr->asset_pools.mesh_primitive,
 		error);
 	if (toy_is_failed(*error))
@@ -176,25 +180,26 @@ static void toy_alloc_mesh_primitive_item (
 
 	toy_vulkan_mesh_primitive_t* vk_primitive = toy_get_asset_item(
 		&asset_mgr->asset_pools.mesh_primitive,
-		primitive_ref_index);
+		primitive_index);
 
 	toy_alloc_vulkan_mesh_primitive(
-		&vk_private->vk_mesh_primitive_pool,
-		primitive_data->attribute_size,
-		primitive_data->index_size,
+		&asset_mgr->vk_private.vk_mesh_primitive_pool,
+		primitive_data->attribute_size / primitive_data->vertex_count,
+		primitive_data->vertex_count,
+		primitive_data->index_count,
 		vk_primitive,
 		error);
 	if (toy_is_failed(*error))
 		goto FAIL_ALLOC_MESH_PRIMITIVE;
 
 	output->pool = &asset_mgr->asset_pools.mesh_primitive;
-	output->index = primitive_ref_index;
+	output->index = primitive_index;
 	output->next_ref = UINT32_MAX;
 	toy_ok(error);
 	return;
 
 FAIL_ALLOC_MESH_PRIMITIVE:
-	toy_raw_free_asset_item(&asset_mgr->asset_pools.mesh_primitive, primitive_ref_index);
+	toy_raw_free_asset_item(&asset_mgr->asset_pools.mesh_primitive, primitive_index);
 FAIL_ALLOC_REF:
 	return;
 }
@@ -206,12 +211,11 @@ void toy_load_mesh_primitive (
 	toy_asset_pool_item_ref_t* output,
 	toy_error_t* error)
 {
-	toy_asset_manager_vulkan_private_t* vk_private = asset_mgr->mgr_private;
+	toy_asset_manager_vulkan_private_t* vk_private = &asset_mgr->vk_private;
 	VkResult vk_err;
 
 	// Alloc asset item
-	toy_alloc_mesh_primitive_item(
-		asset_mgr, primitive_data, output, error);
+	alloc_mesh_primitive_item(asset_mgr, primitive_data, output, error);
 	if (toy_is_failed(*error))
 		goto FAIL_ALLOC_ITEM;
 
@@ -229,7 +233,7 @@ void toy_load_mesh_primitive (
 	toy_vulkan_sub_buffer_t stage_sub_buffers[2];
 	data_blocks[0].data = primitive_data->attributes;
 	data_blocks[0].size = primitive_data->attribute_size;
-	data_blocks[0].alignment = sizeof(float);
+	data_blocks[0].alignment = primitive_data->attribute_size / primitive_data->vertex_count;
 	data_blocks[1].data = primitive_data->indices;
 	data_blocks[1].size = primitive_data->index_size;
 	data_blocks[1].alignment = primitive_data->index_count > UINT16_MAX ? sizeof(uint32_t) : sizeof(uint16_t);
@@ -265,8 +269,9 @@ void toy_load_mesh_primitive (
 		goto FAIL_START_CMD;
 	}
 
-	toy_vkcmd_copy_stage_mesh_primitive_data(
-		&vk_private->vk_asset_loader,
+	toy_vkcmd_copy_mesh_primitive_data(
+		vk_private->vk_asset_loader.transfer_cmd,
+		&vk_private->vk_mesh_primitive_pool,
 		&stage_sub_buffers[0],
 		NULL != primitive_data->indices ? &stage_sub_buffers[1] : NULL,
 		vk_primitive);
@@ -290,11 +295,6 @@ void toy_load_mesh_primitive (
 		toy_err_vkerr(TOY_ERROR_OPERATION_FAILED, vk_err, "Wait for asset loading failed", error);
 		goto FAIL_WAIT_SUBMIT;
 	}
-
-	// Fill others
-	vk_primitive->vertex_count = primitive_data->vertex_count;
-	vk_primitive->index_count = primitive_data->index_count;
-	vk_primitive->index_type = primitive_data->index_count > UINT16_MAX ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16;
 
 	toy_ok(error);
 	return;

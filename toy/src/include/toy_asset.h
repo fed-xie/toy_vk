@@ -54,24 +54,38 @@ typedef struct toy_asset_data_ref_pool_t {
 
 
 typedef struct toy_stage_data_block_t {
-	void* data;
+	const void* data;
 	size_t size;
 	size_t alignment;
 }toy_stage_data_block_t;
 
 
-typedef struct toy_built_in_vertex_t {
-	float position[3];
-	float tex_coord[2];
-	float normal[3];
-}toy_built_in_vertex_t;
+enum toy_vertex_attribute_slot_t {
+	TOY_VERTEX_ATTRIBUTE_SLOT_POSITION = 0,
+	TOY_VERTEX_ATTRIBUTE_SLOT_NORMAL,
+	TOY_VERTEX_ATTRIBUTE_SLOT_TEXCOORD,
+	TOY_VERTEX_ATTRIBUTE_SLOT_MAX,
+};
+
+struct toy_vertex_attribute_slot_descriptor_t {
+	enum toy_vertex_attribute_slot_t slot;
+	uint16_t stride; // Stride for per vertex
+	uint16_t offset;
+};
+
+typedef struct toy_vertex_attribute_descriptor_t {
+	uint32_t slot_count;
+	uint32_t stride; // Stride per vertex
+	const struct toy_vertex_attribute_slot_descriptor_t* slot_descs;
+}toy_vertex_attribute_descriptor_t;
 
 
 typedef struct toy_host_mesh_primitive_t {
-	void* attributes;
+	const void* attributes;
 	size_t attribute_size;
+	const toy_vertex_attribute_descriptor_t* attr_desc;
 
-	void* indices;
+	const void* indices;
 	size_t index_size;
 
 	uint32_t vertex_count;

@@ -1,10 +1,10 @@
 #pragma once
 
-#include "../../include/toy_platform.h"
-#include "../../include/toy_asset.h"
-#include "../../include/platform/vulkan/toy_vulkan_asset.h"
-#include "../../include/platform/vulkan/toy_vulkan_device.h"
-#include "../../include/toy_error.h"
+#include "../../toy_platform.h"
+#include "../../toy_asset.h"
+#include "../../toy_error.h"
+#include "toy_vulkan_asset.h"
+#include "toy_vulkan_device.h"
 
 
 typedef struct toy_vulkan_asset_loader_t {
@@ -72,13 +72,6 @@ void toy_copy_data_to_vulkan_stage_memory (
 
 VkResult toy_start_copy_stage_mesh_primitive_data_cmd (
 	toy_vulkan_asset_loader_t* loader
-);
-
-void toy_vkcmd_copy_stage_mesh_primitive_data (
-	toy_vulkan_asset_loader_t* loader,
-	toy_vulkan_sub_buffer_t* vbo,
-	toy_vulkan_sub_buffer_t* ibo,
-	toy_vulkan_mesh_primitive_t* dst
 );
 
 void toy_submit_vulkan_mesh_primitive_loading_cmd (

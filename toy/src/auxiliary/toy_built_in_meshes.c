@@ -1,29 +1,71 @@
 #include "../include/auxiliary/toy_built_in_meshes.h"
 
 #include "../toy_assert.h"
+#include <stddef.h>
 
 // Vulkan depth is 0.0~1.0, less value cover bigger value by default
-static toy_built_in_vertex_t s_rectangle_vertices[] = {
-		{-0.5f,  0.5f, 0.0f,  0.0f, 0.0f,  0.0f, 0.0f, 1.0f, },
-		{-0.5f, -0.5f, 0.0f,  0.0f, 1.0f,  0.0f, 0.0f, 1.0f, },
-		{ 0.5f,  0.5f, 0.0f,  1.0f, 0.0f,  0.0f, 0.0f, 1.0f, },
-		{ 0.5f, -0.5f, 0.0f,  1.0f, 1.0f,  0.0f, 0.0f, 1.0f, },
+
+// Aligned as vec4 to compatible with GLSL declaration
+struct toy_built_in_mesh_vertex_t {
+	float position[3];
+	float normal[3];
+	float texcoord[2];
 };
-static uint16_t s_rectangle_vertex_indices[] = {
+static const struct toy_vertex_attribute_slot_descriptor_t s_built_in_mesh_attr_slots[] = {
+	{
+		.slot = TOY_VERTEX_ATTRIBUTE_SLOT_POSITION,
+		.stride = sizeof(float) * 3,
+		.offset = offsetof(struct toy_built_in_mesh_vertex_t, position),
+	},{
+		.slot = TOY_VERTEX_ATTRIBUTE_SLOT_NORMAL,
+		.stride = sizeof(float) * 3,
+		.offset = offsetof(struct toy_built_in_mesh_vertex_t, normal),
+	},{
+		.slot = TOY_VERTEX_ATTRIBUTE_SLOT_TEXCOORD,
+		.stride = sizeof(float) * 2,
+		.offset = offsetof(struct toy_built_in_mesh_vertex_t, texcoord),
+	},
+};
+static const toy_vertex_attribute_descriptor_t s_built_in_meh_attr_desc = {
+	.slot_count = sizeof(s_built_in_mesh_attr_slots) / sizeof(*s_built_in_mesh_attr_slots),
+	.slot_descs = s_built_in_mesh_attr_slots,
+};
+
+static const struct toy_built_in_mesh_vertex_t s_attr_rectangle[] = {
+	{
+		.position = {-0.5f, 0.5f, 0.0f,},
+		.normal = {0.0f, 0.0f, 1.0f,},
+		.texcoord = {0.0f, 0.0f,},
+	}, {
+		.position = {-0.5f, -0.5f, 0.0f,},
+		.normal = {0.0f, 0.0f, 1.0f,},
+		.texcoord = {0.0f, 1.0f,},
+	}, {
+		.position = {0.5f, 0.5f, 0.0f,},
+		.normal = {0.0f, 0.0f, 1.0f,},
+		.texcoord = {1.0f, 0.0f,},
+	}, {
+		.position = {0.5f, -0.5f, 0.0f,},
+		.normal = {0.0f, 0.0f, 1.0f,},
+		.texcoord = {1.0f, 1.0f,},
+	},
+};
+static const uint16_t s_index_rectangle[] = {
 	0, 1, 2, 2, 1, 3,
 };
-const static toy_host_mesh_primitive_t s_rectangle_host_mesh_primitive = {
-	.attributes = s_rectangle_vertices,
-	.attribute_size = sizeof(s_rectangle_vertices),
-	.indices = s_rectangle_vertex_indices,
-	.index_size = sizeof(s_rectangle_vertex_indices),
-	.vertex_count = sizeof(s_rectangle_vertices) / sizeof(*s_rectangle_vertices),
-	.index_count = sizeof(s_rectangle_vertex_indices) / sizeof(*s_rectangle_vertex_indices),
+static const toy_host_mesh_primitive_t s_mesh_primitive_rectangle = {
+	.attributes = s_attr_rectangle,
+	.attribute_size = sizeof(s_attr_rectangle),
+	.attr_desc = &s_built_in_meh_attr_desc,
+	.indices = s_index_rectangle,
+	.index_size = sizeof(s_index_rectangle),
+	.vertex_count = sizeof(s_attr_rectangle) / sizeof(*s_attr_rectangle),
+	.index_count = sizeof(s_index_rectangle) / sizeof(*s_index_rectangle),
 };
 
 const toy_host_mesh_primitive_t* toy_get_built_in_mesh_rectangle()
 {
-	return &s_rectangle_host_mesh_primitive;
+	return &s_mesh_primitive_rectangle;
 }
 
 
