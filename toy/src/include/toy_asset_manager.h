@@ -31,14 +31,13 @@ typedef struct toy_asset_manager_t {
 	toy_allocator_t chunk_alc;
 
 	struct {
-		toy_asset_pool_t node;
-		toy_asset_pool_t camera;
+		toy_asset_pool_t image;
+		toy_asset_pool_t image_sampler; // Todo: hash sample paremeters as key, and use hash table, add a default sampler
 		toy_asset_pool_t material;
 		toy_asset_pool_t mesh_primitive;
 		toy_asset_pool_t mesh;
 		toy_asset_pool_t scene;
 		//toy_asset_pool_t file;
-		toy_asset_pool_t image;
 		toy_asset_pool_t font;
 	} asset_pools;
 
@@ -63,10 +62,9 @@ void toy_destroy_asset_manager (
 	toy_asset_manager_t* asset_mgr
 );
 
-void toy_load_mesh_primitive (
+uint32_t toy_load_mesh_primitive (
 	toy_asset_manager_t* asset_mgr,
 	const toy_host_mesh_primitive_t* primitive_data,
-	toy_asset_pool_item_ref_t* output,
 	toy_error_t* error
 );
 
@@ -74,6 +72,18 @@ void toy_load_texture2d (
 	toy_asset_manager_t* asset_mgr,
 	const char* utf8_path,
 	toy_asset_pool_item_ref_t* output,
+	toy_error_t* error
+);
+
+uint32_t toy_alloc_material (
+	toy_asset_manager_t* asset_mgr,
+	size_t size,
+	toy_error_t* error
+);
+
+toy_asset_pool_item_ref_t toy_create_image_sampler (
+	toy_asset_manager_t* asset_mgr,
+	toy_image_sampler_t* sampler_params,
 	toy_error_t* error
 );
 

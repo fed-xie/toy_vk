@@ -70,11 +70,32 @@ void toy_copy_data_to_vulkan_stage_memory (
 	toy_error_t* error
 );
 
-VkResult toy_start_copy_stage_mesh_primitive_data_cmd (
+VkResult toy_start_vkcmd_stage_mesh_primitive (
 	toy_vulkan_asset_loader_t* loader
 );
 
-void toy_submit_vulkan_mesh_primitive_loading_cmd (
+void toy_submit_vkcmd_stage_mesh_primitive (
+	VkDevice dev,
+	toy_vulkan_asset_loader_t* loader,
+	toy_error_t* error
+);
+
+VkResult toy_start_vkcmd_stage_image (
+	toy_vulkan_asset_loader_t* loader
+);
+
+// vkspec.html#synchronization-pipeline-barriers
+// vkspec.html#synchronization-memory-barriers
+void toy_vkcmd_stage_texture_image (
+	toy_vulkan_asset_loader_t* loader,
+	toy_vulkan_sub_buffer_p src_buffer,
+	toy_vulkan_image_p dst_image,
+	uint32_t width,
+	uint32_t height,
+	uint32_t mipmap_level
+);
+
+void toy_submit_vkcmd_stage_image (
 	VkDevice dev,
 	toy_vulkan_asset_loader_t* loader,
 	toy_error_t* error

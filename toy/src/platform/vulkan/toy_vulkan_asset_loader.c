@@ -193,7 +193,7 @@ void toy_reset_vulkan_asset_loader (
 		return;
 	}
 
-	if (loader->graphic_pool != loader->graphic_pool) {
+	if (loader->graphic_pool != loader->transfer_pool) {
 		vk_err = vkResetCommandPool(dev, loader->graphic_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
 		if (toy_unlikely(VK_SUCCESS != vk_err)) {
 			toy_err_vkerr(TOY_ERROR_OPERATION_FAILED, vk_err, "vkResetCommandPool for graphic cmd pool failed when reset asset loader", error);
@@ -279,7 +279,7 @@ void toy_copy_data_to_vulkan_stage_memory (
 }
 
 
-VkResult toy_start_copy_stage_mesh_primitive_data_cmd (
+VkResult toy_start_vkcmd_stage_mesh_primitive (
 	toy_vulkan_asset_loader_t* loader)
 {
 	VkCommandBufferBeginInfo cmd_bi;
@@ -291,7 +291,7 @@ VkResult toy_start_copy_stage_mesh_primitive_data_cmd (
 }
 
 
-void toy_submit_vulkan_mesh_primitive_loading_cmd (
+void toy_submit_vkcmd_stage_mesh_primitive (
 	VkDevice dev,
 	toy_vulkan_asset_loader_t* loader,
 	toy_error_t* error)
@@ -324,6 +324,190 @@ void toy_submit_vulkan_mesh_primitive_loading_cmd (
 	if (toy_unlikely(VK_SUCCESS != vk_err)) {
 		toy_err_vkerr(TOY_ERROR_OPERATION_FAILED, vk_err, "vkQueueSubmit for submit cmd of mesh primitive failed", error);
 		return;
+	}
+
+	toy_ok(error);
+	return;
+}
+
+
+VkResult toy_start_vkcmd_stage_image (
+	toy_vulkan_asset_loader_t* loader)
+{
+	VkResult vk_err;
+	VkCommandBufferBeginInfo cmd_bi;
+	cmd_bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	cmd_bi.pNext = NULL;
+	cmd_bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	cmd_bi.pInheritanceInfo = NULL;
+	vk_err = vkBeginCommandBuffer(loader->transfer_cmd, &cmd_bi);
+	if (VK_SUCCESS != vk_err)
+		return vk_err;
+
+	vk_err = vkBeginCommandBuffer(loader->graphic_cmd, &cmd_bi);
+	if (VK_SUCCESS != vk_err) {
+		vkEndCommandBuffer(loader->transfer_cmd);
+		return vk_err;
+	}
+	return vk_err;
+}
+
+
+// vkspec.html#synchronization-pipeline-barriers
+// vkspec.html#synchronization-memory-barriers
+void toy_vkcmd_stage_texture_image (
+	toy_vulkan_asset_loader_t* loader,
+	toy_vulkan_sub_buffer_p src_buffer,
+	toy_vulkan_image_p dst_image,
+	uint32_t width,
+	uint32_t height,
+	uint32_t mipmap_level)
+{
+	VkImageMemoryBarrier transfer_mem_barrier;
+	transfer_mem_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	transfer_mem_barrier.pNext = NULL;
+	transfer_mem_barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+	transfer_mem_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	transfer_mem_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	transfer_mem_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	transfer_mem_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	transfer_mem_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	transfer_mem_barrier.image = dst_image->handle;
+	transfer_mem_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	transfer_mem_barrier.subresourceRange.baseMipLevel = 0;
+	transfer_mem_barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+	transfer_mem_barrier.subresourceRange.baseArrayLayer = 0;
+	transfer_mem_barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+	vkCmdPipelineBarrier(
+		loader->transfer_cmd,
+		VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0,
+		0, NULL,
+		0, NULL,
+		1, &transfer_mem_barrier);
+
+	VkBufferImageCopy copy_regions[TOY_MAX_VULKAN_MIPMAP_LAVEL];
+	TOY_ASSERT(TOY_MAX_VULKAN_MIPMAP_LAVEL >= mipmap_level);
+	for (uint32_t mipmap_lv_i = 0; mipmap_lv_i < mipmap_level; ++mipmap_lv_i) {
+		//VkImageSubresource img_sub_res;
+		//img_sub_res.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		//img_sub_res.mipLevel = mipmap_lv_i;
+		//img_sub_res.arrayLayer = 0;
+		//VkSubresourceLayout sub_res_layout;
+		//vkGetImageSubresourceLayout(dev, dst_image->handle, &img_sub_res, &sub_res_layout);
+
+		copy_regions[mipmap_lv_i].bufferOffset = src_buffer->offset;
+		copy_regions[mipmap_lv_i].bufferRowLength = width; // or 0 when tightly packed
+		copy_regions[mipmap_lv_i].bufferImageHeight = height; // or 0 when tightly packed
+		copy_regions[mipmap_lv_i].imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copy_regions[mipmap_lv_i].imageSubresource.mipLevel = mipmap_lv_i;
+		copy_regions[mipmap_lv_i].imageSubresource.baseArrayLayer = 0;
+		copy_regions[mipmap_lv_i].imageSubresource.layerCount = 1;
+		copy_regions[mipmap_lv_i].imageOffset.x = 0;
+		copy_regions[mipmap_lv_i].imageOffset.y = 0;
+		copy_regions[mipmap_lv_i].imageOffset.z = 0;
+		copy_regions[mipmap_lv_i].imageExtent.width = width;
+		copy_regions[mipmap_lv_i].imageExtent.height = height;
+		copy_regions[mipmap_lv_i].imageExtent.depth = 1;
+	}
+
+	vkCmdCopyBufferToImage(
+		loader->transfer_cmd,
+		src_buffer->handle,
+		dst_image->handle,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		mipmap_level, copy_regions);
+
+	VkImageMemoryBarrier fmt_mem_barrier;
+	fmt_mem_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	fmt_mem_barrier.pNext = NULL;
+	fmt_mem_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	fmt_mem_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	fmt_mem_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	fmt_mem_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	fmt_mem_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	fmt_mem_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	fmt_mem_barrier.image = dst_image->handle;
+	fmt_mem_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	fmt_mem_barrier.subresourceRange.baseMipLevel = 0;
+	fmt_mem_barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+	fmt_mem_barrier.subresourceRange.baseArrayLayer = 0;
+	fmt_mem_barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+	vkCmdPipelineBarrier(
+		loader->graphic_cmd,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+		0,
+		0, NULL,
+		0, NULL,
+		1, &fmt_mem_barrier);
+}
+
+
+void toy_submit_vkcmd_stage_image (
+	VkDevice dev,
+	toy_vulkan_asset_loader_t* loader,
+	toy_error_t* error)
+{
+	VkResult vk_err;
+
+	vk_err = vkEndCommandBuffer(loader->transfer_cmd);
+	if (toy_unlikely(VK_SUCCESS != vk_err)) {
+		toy_err_vkerr(TOY_ERROR_OPERATION_FAILED, vk_err, "vkEndCommandBuffer for transfer command failed", error);
+		return;
+	}
+
+	vk_err = vkEndCommandBuffer(loader->graphic_cmd);
+	if (toy_unlikely(VK_SUCCESS != vk_err)) {
+		toy_err_vkerr(TOY_ERROR_OPERATION_FAILED, vk_err, "vkEndCommandBuffer for graphic command failed", error);
+		return;
+	}
+
+	vk_err = vkResetFences(dev, 1, &loader->fence);
+	if (toy_unlikely(VK_SUCCESS != vk_err)) {
+		toy_err_vkerr(TOY_ERROR_OPERATION_FAILED, vk_err, "vkResetFences for submit cmd failed", error);
+		return;
+	}
+
+	VkSubmitInfo submit_infos[2];
+	submit_infos[0].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_infos[0].pNext = NULL;
+	submit_infos[0].waitSemaphoreCount = 0;
+	submit_infos[0].pWaitSemaphores = NULL;
+	submit_infos[0].pWaitDstStageMask = NULL;
+	submit_infos[0].commandBufferCount = 1;
+	submit_infos[0].pCommandBuffers = &loader->transfer_cmd;
+	submit_infos[0].signalSemaphoreCount = 1;
+	submit_infos[0].pSignalSemaphores = &loader->semaphore;
+
+	VkPipelineStageFlags wait_stages = VK_PIPELINE_STAGE_TRANSFER_BIT;
+	submit_infos[1].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_infos[1].pNext = NULL;
+	submit_infos[1].waitSemaphoreCount = 1;
+	submit_infos[1].pWaitSemaphores = &loader->semaphore;
+	submit_infos[1].pWaitDstStageMask = &wait_stages;
+	submit_infos[1].commandBufferCount = 1;
+	submit_infos[1].pCommandBuffers = &loader->graphic_cmd;
+	submit_infos[1].signalSemaphoreCount = 0;
+	submit_infos[1].pSignalSemaphores = NULL;
+
+	if (loader->transfer_queue == loader->graphic_queue) {
+		vk_err = vkQueueSubmit(loader->graphic_queue, 2, submit_infos, loader->fence);
+		if (toy_unlikely(VK_SUCCESS != vk_err)) {
+			toy_err_vkerr(TOY_ERROR_OPERATION_FAILED, vk_err, "vkQueueSubmit for submit cmd failed", error);
+		}
+		return;
+	}
+	else {
+		vk_err = vkQueueSubmit(loader->transfer_queue, 1, &submit_infos[0], VK_NULL_HANDLE);
+		if (toy_unlikely(VK_SUCCESS != vk_err)) {
+			toy_err_vkerr(TOY_ERROR_OPERATION_FAILED, vk_err, "vkQueueSubmit for submit cmd failed", error);
+			return;
+		}
+		vk_err = vkQueueSubmit(loader->graphic_queue, 1, &submit_infos[1], loader->fence);
+		if (toy_unlikely(VK_SUCCESS != vk_err)) {
+			toy_err_vkerr(TOY_ERROR_OPERATION_FAILED, vk_err, "vkQueueSubmit for submit cmd failed", error);
+			return;
+		}
 	}
 
 	toy_ok(error);

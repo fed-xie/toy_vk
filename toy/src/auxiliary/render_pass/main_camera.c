@@ -12,7 +12,7 @@ static VkResult create_descriptor_set_layout (
 	const VkAllocationCallbacks* vk_alc_cb,
 	toy_vulkan_descriptor_set_layout_t* output)
 {
-	static const VkDescriptorSetLayoutBinding bindings[] = {
+	static const VkDescriptorSetLayoutBinding layout_bindings[] = {
 		{
 			.binding = 0,
 			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
@@ -39,8 +39,8 @@ static VkResult create_descriptor_set_layout (
 			.pImmutableSamplers = NULL,
 		},
 	};
-	static const binding_count = sizeof(bindings) / sizeof(bindings[0]);
-	return toy_create_vulkan_descriptor_set_layout(dev, bindings, binding_count, vk_alc_cb, output);
+	static const binding_count = sizeof(layout_bindings) / sizeof(layout_bindings[0]);
+	return toy_create_vulkan_descriptor_set_layout(dev, layout_bindings, binding_count, vk_alc_cb, output);
 }
 
 
@@ -381,11 +381,18 @@ static void prepare_instance (
 	TODO_ASSERT(VK_WHOLE_SIZE != uniform_offset);
 
 	struct instance_data_t* inst_mem = (struct instance_data_t*)((uintptr_t)frame_res->mapping_memory + uniform_offset);
+	uint32_t last_mesh_index = UINT32_MAX;
+	uint32_t vertex_base = 0;
 	for (uint32_t i = 0; i < scene->object_count; ++i) {
-		toy_vulkan_mesh_primitive_p vk_primitive = toy_get_asset_item(&asset_mgr->asset_pools.mesh_primitive, scene->mesh_primitives[i]);
-		TOY_ASSERT(NULL != vk_primitive);
+		if (scene->meshes[i] != last_mesh_index) {
+			toy_mesh_t* mesh = toy_get_asset_item(&asset_mgr->asset_pools.mesh, scene->meshes[i]);
+			TOY_ASSERT(NULL != mesh && UINT32_MAX != mesh->primitive_index);
+			toy_vulkan_mesh_primitive_p vk_primitive = toy_get_asset_item(&asset_mgr->asset_pools.mesh_primitive, mesh->primitive_index);
+			TOY_ASSERT(NULL != vk_primitive);
+			vertex_base = vk_primitive->first_index;
+		}
 
-		inst_mem[i].vertex_base = vk_primitive->first_vertex;
+		inst_mem[i].vertex_base = vertex_base;
 		inst_mem[i].instance_index = i;
 	}
 }
@@ -491,6 +498,54 @@ static void update_descriptor_set (
 }
 
 
+static void draw_mesh (
+	toy_built_in_render_pass_module_t* pass,
+	VkCommandBuffer draw_cmd,
+	toy_built_in_vulkan_descriptor_set_layout_t* built_in_desc_set_layouts,
+	toy_built_in_vulkan_frame_resource_t* frame_res,
+	toy_vulkan_driver_t* vk_driver,
+	toy_asset_manager_t* asset_mgr,
+	uint32_t mesh_index,
+	uint32_t* last_material_index,
+	uint32_t instance_count,
+	uint32_t first_instance)
+{
+	toy_vulkan_render_pass_context_main_camera_t* ctx = pass->context;
+
+	toy_mesh_t* mesh = toy_get_asset_item(&asset_mgr->asset_pools.mesh, mesh_index);
+	TOY_ASSERT(NULL != mesh && UINT32_MAX != mesh->primitive_index);
+	if (*last_material_index != mesh->material_index && UINT32_MAX != mesh->material_index) {
+		VkDescriptorSet desc_set;
+		VkDescriptorSetLayout desc_set_layouts[] = {
+			built_in_desc_set_layouts->single_texture.handle,
+		};
+		VkDescriptorSetAllocateInfo desc_set_ai;
+		desc_set_ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		desc_set_ai.pNext = NULL;
+		desc_set_ai.descriptorPool = frame_res->descriptor_pool;
+		desc_set_ai.descriptorSetCount = sizeof(desc_set_layouts) / sizeof(*desc_set_layouts);
+		desc_set_ai.pSetLayouts = desc_set_layouts;
+		VkResult vk_err = vkAllocateDescriptorSets(vk_driver->device.handle, &desc_set_ai, &desc_set);
+		TODO_ASSERT(VK_SUCCESS == vk_err);
+
+		toy_vulkan_descriptor_set_data_header_t** material_p = toy_get_asset_item(&asset_mgr->asset_pools.material, mesh->material_index);
+		TOY_ASSERT(NULL != material_p);
+		toy_update_vulkan_descriptor_set(vk_driver->device.handle, desc_set, *material_p);
+
+		VkDescriptorSet desc_sets[] = { desc_set };
+		vkCmdBindDescriptorSets(
+			draw_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+			ctx->shaders.mesh.layout.handle,
+			1, sizeof(desc_sets) / sizeof(*desc_sets), desc_sets,
+			0, NULL);
+		*last_material_index = mesh->material_index;
+	}
+	toy_vulkan_mesh_primitive_p vk_primitive = toy_get_asset_item(&asset_mgr->asset_pools.mesh_primitive, mesh->primitive_index);
+	TOY_ASSERT(NULL != vk_primitive);
+	vkCmdDrawIndexed(draw_cmd, vk_primitive->index_count, instance_count, vk_primitive->first_index, 0, first_instance);
+}
+
+
 static void run_render_pass (
 	toy_built_in_render_pass_module_t* pass,
 	toy_built_in_vulkan_frame_resource_t* frame_res,
@@ -527,14 +582,14 @@ static void run_render_pass (
 	vkCmdBeginRenderPass(draw_cmd, &render_pass_bi, VK_SUBPASS_CONTENTS_INLINE);
 	
 	update_descriptor_set(pass, vk_driver, frame_res, built_in_desc_set_layouts, scene, asset_mgr);
-
+	
 	VkDescriptorSet desc_sets[] = { ctx->desc_set };
 	vkCmdBindDescriptorSets(
 		draw_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
 		ctx->shaders.mesh.layout.handle,
 		0, sizeof(desc_sets) / sizeof(*desc_sets), desc_sets,
 		0, NULL);
-
+	
 	vkCmdBindPipeline(draw_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx->shaders.mesh.pipeline);
 
 	vkCmdBindIndexBuffer(
@@ -543,27 +598,23 @@ static void run_render_pass (
 		0,
 		VK_INDEX_TYPE_UINT16);
 
-	uint32_t primitive_index = scene->mesh_primitives[0];
+	uint32_t obj_i;
+	uint32_t last_inst;
+	uint32_t last_material_index = UINT32_MAX;
+	uint32_t last_mesh = scene->meshes[0];
 	uint32_t instance_count = 0;
-	for (uint32_t i = 0; i < scene->object_count; ++i) {
-		if (scene->mesh_primitives[i] == primitive_index) {
+	for (obj_i = 0, last_inst = obj_i; obj_i < scene->object_count; ++obj_i) {
+		if (scene->meshes[obj_i] == last_mesh) {
 			++instance_count;
 			continue;
 		}
-		else {
-			toy_vulkan_mesh_primitive_t* vk_primitive = toy_get_asset_item(&asset_mgr->asset_pools.mesh_primitive, scene->mesh_primitives[i]);
-			TOY_ASSERT(NULL != vk_primitive);
-			vkCmdDrawIndexed(draw_cmd, instance_count, 1, vk_primitive->first_index, 0, 0);
-			instance_count = 0;
-			primitive_index = scene->mesh_primitives[i];
-		}
+		draw_mesh(pass, draw_cmd, built_in_desc_set_layouts, frame_res, vk_driver, asset_mgr, last_mesh, &last_material_index, instance_count, last_inst);
+		last_mesh = scene->meshes[obj_i];
+		instance_count = 1;
+		last_inst = obj_i;
 	}
 
-	if (instance_count > 0) {
-		toy_vulkan_mesh_primitive_t* vk_primitive = toy_get_asset_item(&asset_mgr->asset_pools.mesh_primitive, primitive_index);
-		TOY_ASSERT(NULL != vk_primitive);
-		vkCmdDrawIndexed(draw_cmd, instance_count, instance_count, vk_primitive->first_index, 0, 0);
-	}
+	draw_mesh(pass, draw_cmd, built_in_desc_set_layouts, frame_res, vk_driver, asset_mgr, last_mesh, &last_material_index, instance_count, last_inst);
 
 	vkCmdEndRenderPass(draw_cmd);
 

@@ -2,7 +2,10 @@
 
 #include "../../toy_platform.h"
 #include "toy_vulkan_memory.h"
+#include "../../toy_asset.h"
 
+
+#define TOY_MAX_VULKAN_MIPMAP_LAVEL 8
 
 typedef struct toy_vulkan_image_t {
 	VkImage handle;
@@ -11,7 +14,20 @@ typedef struct toy_vulkan_image_t {
 }toy_vulkan_image_t, *toy_vulkan_image_p;
 
 
+typedef struct toy_vulkan_sampler_t {
+	toy_image_sampler_t params;
+	VkSampler handle;
+}toy_vulkan_sampler_t;
+
+
 TOY_EXTERN_C_START
+
+VkResult toy_create_vulkan_image_sampler (
+	VkDevice dev,
+	const toy_image_sampler_t* toy_sampler,
+	const VkAllocationCallbacks* vk_alc_cb,
+	VkSampler* output
+);
 
 void toy_create_vulkan_image_depth (
 	toy_vulkan_memory_allocator_p vk_allocator,

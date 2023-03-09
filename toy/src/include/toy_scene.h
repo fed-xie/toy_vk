@@ -16,7 +16,7 @@ typedef struct toy_scene_t {
 	uint32_t scene_id;
 
 	toy_fmat4x4_t inst_matrices[128];
-	uint32_t mesh_primitives[128];
+	uint32_t meshes[128];
 	uint32_t object_ids[128];
 	uint32_t object_count;
 

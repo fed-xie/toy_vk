@@ -1,5 +1,61 @@
 #include "../../include/platform/vulkan/toy_vulkan_image.h"
 
+#include "../../toy_assert.h"
+
+static VkSamplerAddressMode toy_image_sampler_wrap_to_vksampler_address_mode (enum toy_image_sampler_wrap_t wrap)
+{
+	switch (wrap)
+	{
+	case TOY_IMAGE_SAMPLER_WRAP_REPEAT:
+		return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	case TOY_IMAGE_SAMPLER_WRAP_MIRRORED_REPEAT:
+		return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+	case TOY_IMAGE_SAMPLER_WRAP_CLAMP_TO_EDGE:
+		return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	case TOY_IMAGE_SAMPLER_WRAP_CLAMP_TO_BORDER:
+		return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+	case TOY_IMAGE_SAMPLER_WRAP_MIRROR_CLAMP_TO_EDGE:
+		return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
+	default:
+		TOY_ASSERT(0);
+		return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	}
+}
+
+VkResult toy_create_vulkan_image_sampler (
+	VkDevice dev,
+	const toy_image_sampler_t* toy_sampler,
+	const VkAllocationCallbacks* vk_alc_cb,
+	VkSampler* output)
+{
+	TOY_ASSERT(
+		TOY_IMAGE_SAMPLER_FILTER_NEAREST == toy_sampler->mag_filter ||
+		TOY_IMAGE_SAMPLER_FILTER_LINEAR == toy_sampler->mag_filter);
+
+	VkSamplerCreateInfo sampler_ci;
+	sampler_ci.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler_ci.pNext = NULL;
+	sampler_ci.flags = 0;
+	sampler_ci.magFilter = toy_sampler->mag_filter == TOY_IMAGE_SAMPLER_FILTER_NEAREST ?
+		VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+	sampler_ci.minFilter = (toy_sampler->min_filter & 0xf) == TOY_IMAGE_SAMPLER_FILTER_NEAREST ?
+		VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+	sampler_ci.mipmapMode = (toy_sampler->min_filter & (0xf << 4)) == TOY_IMAGE_SAMPLER_FILTER_LINEAR ?
+		VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	sampler_ci.addressModeU = toy_image_sampler_wrap_to_vksampler_address_mode(toy_sampler->wrap_u);
+	sampler_ci.addressModeV = toy_image_sampler_wrap_to_vksampler_address_mode(toy_sampler->wrap_v);
+	sampler_ci.addressModeW = toy_image_sampler_wrap_to_vksampler_address_mode(toy_sampler->wrap_w);
+	sampler_ci.mipLodBias = 0.0f;
+	sampler_ci.anisotropyEnable = VK_FALSE;
+	sampler_ci.maxAnisotropy = 1.0f;
+	sampler_ci.compareEnable = VK_FALSE;
+	sampler_ci.compareOp = VK_COMPARE_OP_ALWAYS;
+	sampler_ci.minLod = 0.0f;
+	sampler_ci.maxLod = (float)TOY_MAX_VULKAN_MIPMAP_LAVEL;
+	sampler_ci.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+	sampler_ci.unnormalizedCoordinates = VK_FALSE;
+	return vkCreateSampler(dev, &sampler_ci, vk_alc_cb, output);
+}
 
 
 void toy_create_vulkan_image_depth (

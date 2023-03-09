@@ -4,6 +4,8 @@
 #include "../include/auxiliary/toy_built_in_ecs.h"
 #include "../include/auxiliary/toy_built_in_pipeline.h"
 
+#include "../auxiliary/shader/mesh.h"
+
 #include <cassert>
 
 using toy::operator*;
@@ -13,7 +15,8 @@ using toy::operator/;
 
 struct game_data_t {
 	uint32_t mesh_id;
-	toy_asset_pool_item_ref_t mesh_primitive_ref;
+	uint32_t mesh_index;
+	uint32_t mesh2_index;
 };
 
 void load_scene (toy_app_t* app, game_data_t* gd)
@@ -23,21 +26,81 @@ void load_scene (toy_app_t* app, game_data_t* gd)
 	toy_scene_t* scene = toy_create_scene(app->alc, &err);
 	assert(NULL != scene);
 	toy_push_scene(app, scene);
-
-	toy_asset_pool_item_ref_t mesh_primitive_ref;
-	toy_load_mesh_primitive(
+	
+	uint32_t mesh_index = toy_load_built_in_mesh(
 		&app->asset_mgr,
 		toy_get_built_in_mesh_rectangle(),
-		&mesh_primitive_ref,
 		&err);
 	assert(toy_is_ok(err));
 
+	toy_asset_pool_item_ref_t tex_ref;
+	toy_load_texture2d(
+		&app->asset_mgr,
+		"assets/textures/test.jpg",
+		&tex_ref,
+		&err);
+	assert(toy_is_ok(err));
+
+	toy_asset_pool_item_ref_t tex2_ref;
+	toy_load_texture2d(
+		&app->asset_mgr,
+		"assets/textures/test2.jpg",
+		&tex2_ref,
+		&err);
+	assert(toy_is_ok(err));
+
+	toy_image_sampler_t img_sampler;
+	img_sampler.mag_filter = TOY_IMAGE_SAMPLER_FILTER_LINEAR;
+	img_sampler.min_filter = TOY_IMAGE_SAMPLER_FILTER_LINEAR;
+	img_sampler.wrap_u = TOY_IMAGE_SAMPLER_WRAP_REPEAT;
+	img_sampler.wrap_v = TOY_IMAGE_SAMPLER_WRAP_REPEAT;
+	img_sampler.wrap_w = TOY_IMAGE_SAMPLER_WRAP_REPEAT;
+	toy_asset_pool_item_ref_t sampler_ref = toy_create_image_sampler(
+		&app->asset_mgr, &img_sampler, &err);
+	assert(toy_is_ok(err));
+
+	uint32_t material_index = toy_alloc_vulkan_descriptor_set_single_texture(
+		&app->asset_mgr, &app->vk_built_in_pipeline.built_in_desc_set_layout.single_texture, &err);
+	assert(toy_is_ok(err));
+	toy_built_in_descriptor_set_single_texture_t** desc_set_data_p = (toy_built_in_descriptor_set_single_texture_t**)toy_get_asset_item(
+		&app->asset_mgr.asset_pools.material, material_index);
+	assert(NULL != desc_set_data_p);
+	toy_built_in_descriptor_set_single_texture_t* desc_set_data = *desc_set_data_p;
+	desc_set_data->image_ref = tex_ref;
+	toy_add_asset_ref(tex_ref.pool, tex_ref.index, 1);
+	desc_set_data->sampler_ref = sampler_ref;
+	toy_add_asset_ref(sampler_ref.pool, sampler_ref.index, 1);
+
+	toy_mesh_t* mesh = (toy_mesh_t*)toy_get_asset_item(&app->asset_mgr.asset_pools.mesh, mesh_index);
+	mesh->material_index = material_index;
+	toy_add_asset_ref(&app->asset_mgr.asset_pools.material, material_index, 1);
+
+	uint32_t mesh2_index = toy_alloc_asset_item(&app->asset_mgr.asset_pools.mesh, &err);
+	toy_mesh_t* mesh2 = (toy_mesh_t*)toy_get_asset_item(&app->asset_mgr.asset_pools.mesh, mesh2_index);
+	mesh2->primitive_index = mesh->primitive_index;
+	toy_add_asset_ref(&app->asset_mgr.asset_pools.mesh_primitive, mesh->primitive_index, 1);
+	uint32_t material2_index = toy_alloc_vulkan_descriptor_set_single_texture(
+		&app->asset_mgr, &app->vk_built_in_pipeline.built_in_desc_set_layout.single_texture, &err);
+	assert(toy_is_ok(err));
+	toy_built_in_descriptor_set_single_texture_t** desc_set2_data_p = (toy_built_in_descriptor_set_single_texture_t**)toy_get_asset_item(
+		&app->asset_mgr.asset_pools.material, material2_index);
+	assert(NULL != desc_set2_data_p);
+	toy_built_in_descriptor_set_single_texture_t* desc_set2_data = *desc_set2_data_p;
+	desc_set2_data->image_ref = tex2_ref;
+	toy_add_asset_ref(tex2_ref.pool, tex2_ref.index, 1);
+	desc_set2_data->sampler_ref = sampler_ref;
+	toy_add_asset_ref(sampler_ref.pool, sampler_ref.index, 1);
+	mesh2->material_index = material2_index;
+	toy_add_asset_ref(&app->asset_mgr.asset_pools.material, material2_index, 1);
+	
+
 	for (uint32_t i = 0; i < sizeof(scene->object_ids) / sizeof(scene->object_ids[0]); ++i) {
 		scene->object_ids[i] = i + 1;
-		scene->mesh_primitives[i] = mesh_primitive_ref.index;
+		scene->meshes[i] = mesh_index;
 		float offset = (i & 1) ? (float)i : -(float)i;
 		scene->inst_matrices[i] = toy::TRS(toy_fvec3_t{ offset / 2.0f, offset / 4.0f, -static_cast<float>(i) }, toy::identity_quaternion(), { 1, 1, 1 });
 	}
+	scene->meshes[12] = mesh2_index;
 	scene->object_count = 128;
 
 	toy_init_perspective_camera(45.0f, 4.0f / 3.0f, 0.1f, 1000.0f, &scene->main_camera);
@@ -48,13 +111,15 @@ void load_scene (toy_app_t* app, game_data_t* gd)
 	toy::look_at(cam.eye, cam.target - cam.eye, cam.up, &cam.view_matrix);
 
 	gd->mesh_id = 3;
-	gd->mesh_primitive_ref = mesh_primitive_ref;
+	gd->mesh_index = mesh_index;
+	gd->mesh2_index = mesh2_index;
 }
 
 
 void destroy_scene (toy_app_t* app, game_data_t* gd)
 {
-	toy_free_asset_item(gd->mesh_primitive_ref.pool, gd->mesh_primitive_ref.index);
+	toy_free_asset_item(&app->asset_mgr.asset_pools.mesh, gd->mesh2_index);
+	toy_free_asset_item(&app->asset_mgr.asset_pools.mesh, gd->mesh_index);
 }
 
 
@@ -127,6 +192,13 @@ void update_scene (toy_app_t* app, void* user_data, uint64_t delta_ms)
 
 	if (TOY_KEY_STATE_DOWN == toy_get_keyboard_key(keybd, VK_ESCAPE))
 		app->window.is_quit = 1;
+
+	if (toy_is_keyboard_key_pressed(keybd, 'H')) {
+		if (gd->mesh_index == app->top_scene->meshes[3])
+			app->top_scene->meshes[3] = gd->mesh2_index;
+		else
+			app->top_scene->meshes[3] = gd->mesh_index;
+	}
 }
 
 

@@ -28,10 +28,10 @@ static toy_asset_pool_chunk_p toy_alloc_asset_chunk (
 	chunk->data_area = (uintptr_t)chunk->ref_counts + sizeof(*(chunk->ref_counts)) * pool->chunk_block_count;
 	if (pool->asset_alignment > 0) {
 		size_t mask = pool->asset_alignment - 1;
-		size_t padding = pool->asset_alignment - (chunk->data_area & mask);
+		size_t padding = (pool->asset_alignment - (chunk->data_area & mask)) & mask;
 		chunk->data_area += padding;
 	}
-	TOY_ASSERT(chunk->data_area + pool->asset_size * pool->chunk_block_count < (uintptr_t)chunk + TOY_MEMORY_CHUNK_SIZE);
+	TOY_ASSERT(chunk->data_area + pool->asset_size * pool->chunk_block_count <= (uintptr_t)chunk + TOY_MEMORY_CHUNK_SIZE);
 	for (uint32_t i = 0; i < pool->chunk_block_count - 1; ++i)
 		chunk->ref_counts[i].store(i + 1);
 	chunk->ref_counts[pool->chunk_block_count - 1].store(UINT32_MAX);
@@ -112,7 +112,7 @@ void toy_destroy_asset_pool (
 
 void* toy_get_asset_item (toy_asset_pool_p pool, uint32_t index)
 {
-	TOY_ASSERT(index < pool->chunk_block_count* pool->chunk_count);
+	TOY_ASSERT(index < pool->chunk_block_count * pool->chunk_count);
 
 	uint64_t pool_index = index / pool->chunk_block_count;
 	TOY_ASSERT(pool_index < pool->chunk_count);

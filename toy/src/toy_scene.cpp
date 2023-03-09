@@ -21,7 +21,7 @@ toy_scene_t* toy_create_scene (
 	scene->scene_id = 0;
 
 	memset(scene->object_ids, 0, sizeof(scene->object_ids));
-	memset(scene->mesh_primitives, 0, sizeof(scene->mesh_primitives));
+	memset(scene->meshes, 0, sizeof(scene->meshes));
 	memset(scene->inst_matrices, 0, sizeof(scene->inst_matrices));
 
 	scene->alc = alc;

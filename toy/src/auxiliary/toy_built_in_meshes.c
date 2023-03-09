@@ -69,10 +69,9 @@ const toy_host_mesh_primitive_t* toy_get_built_in_mesh_rectangle()
 }
 
 
-void toy_load_built_in_mesh (
+uint32_t toy_load_built_in_mesh (
 	toy_asset_manager_t* asset_mgr,
 	const toy_host_mesh_primitive_t* primitive,
-	toy_asset_pool_item_ref_t* output,
 	toy_error_t* error)
 {
 	uint32_t mesh_index = toy_alloc_asset_item(&asset_mgr->asset_pools.mesh, error);
@@ -82,26 +81,19 @@ void toy_load_built_in_mesh (
 	toy_mesh_t* mesh = toy_get_asset_item(&asset_mgr->asset_pools.mesh, mesh_index);
 	TOY_ASSERT(NULL != mesh);
 
-	toy_load_mesh_primitive(
-		asset_mgr,
-		primitive,
-		&mesh->first_primitive,
-		error);
+	mesh->primitive_index = toy_load_mesh_primitive(
+		asset_mgr, primitive, error);
 	if (toy_is_failed(*error))
 		goto FAIL_LOAD_PRIMITIVE;
 	
-	mesh->ref_pool = &asset_mgr->item_ref_pool;
-	toy_add_asset_ref(mesh->first_primitive.pool, mesh->first_primitive.index, 1);
-	mesh->primitive_count = 1;
+	toy_add_asset_ref(&asset_mgr->asset_pools.mesh_primitive, mesh->primitive_index, 1);
+	mesh->material_index = UINT32_MAX;
 
-	output->pool = &asset_mgr->asset_pools.mesh;
-	output->index = mesh_index;
-	output->next_ref = UINT32_MAX;
 	toy_ok(error);
-	return;
+	return mesh_index;
 
 FAIL_LOAD_PRIMITIVE:
 	toy_raw_free_asset_item(&asset_mgr->asset_pools.mesh, mesh_index);
 FAIL_ALLOC_MESH:
-	return;
+	return UINT32_MAX;
 }

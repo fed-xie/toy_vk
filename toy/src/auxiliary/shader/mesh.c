@@ -3,17 +3,63 @@
 #include "../../toy_assert.h"
 
 
-static void create_descriptor_set_layout (
+static VkResult create_descriptor_set_layout (
 	toy_vulkan_driver_t* vk_driver,
-	toy_built_in_vulkan_descriptor_set_layout_t* layouts,
+	toy_built_in_vulkan_descriptor_set_layout_t* built_in_layouts,
 	toy_error_t* error)
 {
-	VkResult vk_err;
 	VkDevice dev = vk_driver->device.handle;
 	const VkAllocationCallbacks* vk_alc_cb = vk_driver->vk_alc_cb_p;
 
+	static const VkDescriptorSetLayoutBinding bindings[] = {
+		{
+			.binding = 0,
+			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.descriptorCount = 1,
+			.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			.pImmutableSamplers = NULL,
+		},
+	};
+	static const binding_count = sizeof(bindings) / sizeof(bindings[0]);
+	return toy_create_vulkan_descriptor_set_layout(dev, bindings, binding_count, vk_alc_cb, &built_in_layouts->single_texture);
+}
+
+
+static const toy_vulkan_descriptor_set_binding_t s_desc_set_binding_single_texture[] = {
+	{
+		.desc_type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		.binding = 0,
+		.offset = offsetof(struct toy_built_in_descriptor_set_single_texture_t, image_ref),
+		.size = sizeof(struct toy_built_in_descriptor_set_single_texture_t),
+	},
+};
+
+
+uint32_t toy_alloc_vulkan_descriptor_set_single_texture (
+	toy_asset_manager_t* asset_mgr,
+	const toy_vulkan_descriptor_set_layout_t* desc_set_layout,
+	toy_error_t* error)
+{
+	uint32_t material_index = toy_alloc_material(asset_mgr, sizeof(toy_built_in_descriptor_set_single_texture_t), error);
+	if (toy_is_failed(*error))
+		return UINT32_MAX;
+	
+	toy_built_in_descriptor_set_single_texture_t** desc_set_data_p = (toy_built_in_descriptor_set_single_texture_t**)toy_get_asset_item(
+		&asset_mgr->asset_pools.material, material_index);
+	TOY_ASSERT(NULL != desc_set_data_p);
+	toy_built_in_descriptor_set_single_texture_t* desc_set_data = *desc_set_data_p;
+	desc_set_data->header.desc_set_layout = desc_set_layout;
+	desc_set_data->header.bindings = s_desc_set_binding_single_texture;
+
+	toy_asset_pool_item_ref_t empty_ref;
+	empty_ref.pool = NULL;
+	empty_ref.index = UINT32_MAX;
+	empty_ref.next_ref = UINT32_MAX;
+
+	desc_set_data->image_ref = empty_ref;
+	desc_set_data->sampler_ref = empty_ref;
 	toy_ok(error);
-	return;
+	return material_index;
 }
 
 
@@ -29,6 +75,7 @@ static void create_pipeline_layout (
 
 	VkDescriptorSetLayout desc_set_layouts[] = {
 		built_in_layouts->main_camera.handle,
+		built_in_layouts->single_texture.handle
 	};
 
 	VkPipelineLayout layout;
@@ -47,7 +94,7 @@ static void create_pipeline_layout (
 	}
 
 	output->desc_set_layouts[0] = built_in_layouts->main_camera.handle;
-	output->desc_set_layouts[1] = VK_NULL_HANDLE;
+	output->desc_set_layouts[1] = built_in_layouts->single_texture.handle;
 	output->desc_set_layouts[2] = VK_NULL_HANDLE;
 	output->desc_set_layouts[3] = VK_NULL_HANDLE;
 	output->handle = layout;
@@ -72,7 +119,7 @@ static void create_module (
 	VkShaderModule vertex_shader = toy_create_vulkan_shader_module("assets/SPIR_V/mesh_indirect_glsl_vt.spv", dev, shader_loader, vk_alc_cb, error);
 	if (toy_is_failed(*error))
 		goto FAIL_VERTEX_SHADER;
-	VkShaderModule fragment_shader = toy_create_vulkan_shader_module("assets/SPIR_V/mesh_glsl_fg.spv", dev, shader_loader, vk_alc_cb, error);
+	VkShaderModule fragment_shader = toy_create_vulkan_shader_module("assets/SPIR_V/mesh_indirect_glsl_fg.spv", dev, shader_loader, vk_alc_cb, error);
 	if (toy_is_failed(*error))
 		goto FAIL_FRAGMENT_SHADER;
 

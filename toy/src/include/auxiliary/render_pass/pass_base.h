@@ -52,9 +52,14 @@ struct toy_built_in_vulkan_pipeline_config_t {
 typedef struct toy_built_in_vulkan_descriptor_set_layout_t {
 	toy_vulkan_descriptor_set_layout_t main_camera;
 
-	toy_vulkan_descriptor_set_layout_t mesh;
 	toy_vulkan_descriptor_set_layout_t single_texture;
 }toy_built_in_vulkan_descriptor_set_layout_t;
+
+typedef struct toy_built_in_descriptor_set_single_texture_t {
+	toy_vulkan_descriptor_set_data_header_t header;
+	toy_asset_pool_item_ref_t image_ref;
+	toy_asset_pool_item_ref_t sampler_ref;
+}toy_built_in_descriptor_set_single_texture_t;
 
 
 typedef struct toy_built_in_shader_module_t toy_built_in_shader_module_t;

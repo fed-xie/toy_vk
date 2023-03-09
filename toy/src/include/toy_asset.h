@@ -94,10 +94,39 @@ typedef struct toy_host_mesh_primitive_t {
 
 
 typedef struct toy_mesh_t {
-	toy_asset_item_ref_pool_t* ref_pool;
-	toy_asset_pool_item_ref_t first_primitive;
-	uint32_t primitive_count;
+	uint32_t primitive_index;
+	uint32_t material_index;
 }toy_mesh_t;
+
+
+
+enum toy_image_sampler_filter_t {
+	TOY_IMAGE_SAMPLER_FILTER_NEAREST = 0x1,
+	TOY_IMAGE_SAMPLER_FILTER_LINEAR = 0x3,
+	TOY_IMAGE_SAMPLER_FILTER_NEAREST_MIPMAP_NEAREST = (TOY_IMAGE_SAMPLER_FILTER_NEAREST << 4) | TOY_IMAGE_SAMPLER_FILTER_NEAREST,
+	TOY_IMAGE_SAMPLER_FILTER_LINEAR_MIPMAP_NEAREST = (TOY_IMAGE_SAMPLER_FILTER_LINEAR << 4) | TOY_IMAGE_SAMPLER_FILTER_NEAREST,
+	TOY_IMAGE_SAMPLER_FILTER_NEAREST_MIPMAP_LINEAR = (TOY_IMAGE_SAMPLER_FILTER_NEAREST << 4) | TOY_IMAGE_SAMPLER_FILTER_LINEAR,
+	TOY_IMAGE_SAMPLER_FILTER_LINEAR_MIPMAP_LINEAR = (TOY_IMAGE_SAMPLER_FILTER_LINEAR << 4) | TOY_IMAGE_SAMPLER_FILTER_LINEAR,
+};
+
+enum toy_image_sampler_wrap_t {
+	TOY_IMAGE_SAMPLER_WRAP_REPEAT,
+	TOY_IMAGE_SAMPLER_WRAP_MIRRORED_REPEAT,
+	TOY_IMAGE_SAMPLER_WRAP_CLAMP_TO_EDGE,
+#if TOY_DRIVER_VULKAN
+	TOY_IMAGE_SAMPLER_WRAP_CLAMP_TO_BORDER, // Vulkan only
+	TOY_IMAGE_SAMPLER_WRAP_MIRROR_CLAMP_TO_EDGE, // Vulkan only
+#endif
+};
+
+typedef struct toy_image_sampler_t {
+	enum toy_image_sampler_filter_t mag_filter; // NEAREST | LINEAR only
+	enum toy_image_sampler_filter_t min_filter;
+	enum toy_image_sampler_wrap_t wrap_u;
+	enum toy_image_sampler_wrap_t wrap_v;
+	enum toy_image_sampler_wrap_t wrap_w;
+}toy_image_sampler_t;
+
 
 
 TOY_EXTERN_C_START
