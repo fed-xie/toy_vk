@@ -71,11 +71,8 @@ toy_app_t* toy_create_app (
 	if (toy_is_failed(*error))
 		goto FAIL_ASSET_MANAGER;
 
-	toy_create_built_in_vulkan_pipeline(
-		&app->vk_driver,
-		app->alc,
-		&app->vk_built_in_pipeline,
-		error);
+	app->vk_built_in_pipeline = toy_create_built_in_vulkan_pipeline(
+		&app->vk_driver, app->alc, error);
 	if (toy_is_failed(*error))
 		goto FAIL_PIPELINE;
 
@@ -101,6 +98,7 @@ FAIL_MAIN_LUA_VM:
 FAIL_ALC:
 	toy_free_aligned(&std_alc, app);
 FAIL_APP:
+	toy_log_error(error);
 	return NULL;
 }
 
@@ -118,7 +116,7 @@ void toy_destroy_app (toy_app_t* app)
 	}
 
 	toy_destroy_built_in_vulkan_pipeline(
-		&app->vk_driver, app->alc, &app->vk_built_in_pipeline);
+		&app->vk_driver, app->alc, app->vk_built_in_pipeline);
 
 	toy_destroy_asset_manager(&app->asset_mgr);
 
@@ -179,20 +177,26 @@ void toy_main_loop (toy_app_t* app, toy_app_loop_event_t* loop_evt)
 		uint64_t delta_time = frame_begin - frame_end;
 
 		loop_evt->on_update(app, loop_evt->user_data, delta_time);
-
-		if (NULL != app->top_scene) {
+		
+		toy_scene_t* scene = app->top_scene;
+		while (NULL != scene) {
 			toy_swap_vulkan_swapchain(
 				app->vk_driver.device.handle,
 				&app->vk_driver.swapchain,
 				&err);
+			TODO_ASSERT(toy_is_ok(err));
 
-			toy_draw_scene(&app->vk_driver, app->top_scene, &app->asset_mgr, &app->vk_built_in_pipeline, &err);
+			toy_draw_scene(&app->vk_driver, scene, &app->asset_mgr, app->vk_built_in_pipeline, &err);
+			TODO_ASSERT(toy_is_ok(err));
 
 			toy_present_vulkan_swapchain(
 				app->vk_driver.device.handle,
 				&app->vk_driver.swapchain,
 				app->vk_driver.present_queue,
 				&err);
+			TODO_ASSERT(toy_is_ok(err));
+
+			scene = scene->next;
 		}
 
 		frame_end = toy_get_timer_during_ms(&frame_timer);

@@ -22,6 +22,7 @@ void toy_open_file (
 	FILE* file = NULL;
 	err = fopen_s(&file, utf8_path, mode);
 	if (0 != err) {
+		toy_log_e("Open file %s failed", utf8_path);
 		toy_err_errno(TOY_ERROR_FILE_OPEN_FAILED, err, "fopen_s failed", error);
 		return;
 	}

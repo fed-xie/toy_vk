@@ -5,6 +5,7 @@
 #include "toy_memory.h"
 #include "scene/toy_scene_component.h"
 #include "scene/toy_scene_camera.h"
+#include "scene/toy_scene_direct_light.h"
 
 #include <stdint.h>
 

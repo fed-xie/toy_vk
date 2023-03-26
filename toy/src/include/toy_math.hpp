@@ -161,6 +161,8 @@ void look_at (const toy_fvec3_t& eye, const toy_fvec3_t& forward, const toy_fvec
 
 toy_fmat4x4_t fquat_to_fmat4x4 (const toy_fquat_t& q);
 
+void inverse (const toy_fmat4x4_t& mat, toy_fmat4x4_t* output);
+
 // Translate * Rotation * Scale Matrix
 toy_fmat4x4_t TRS (const toy_fvec3_t& translation, const toy_fmat4x4_t& rotation, const toy_fvec3_t& scale);
 // Translate * Rotation * Scale Matrix

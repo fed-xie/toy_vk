@@ -195,6 +195,16 @@ toy_fmat4x4_t fquat_to_fmat4x4 (const toy_fquat_t& q)
 }
 
 
+static_assert(sizeof(glm::mat4) == sizeof(toy_fmat4x4_t), "Matrix size different");
+void inverse (const toy_fmat4x4_t& mat, toy_fmat4x4_t* output) {
+	glm::mat4* mat_p = reinterpret_cast<glm::mat4*>(output);
+#if TOY_MATRIX_ROW_MAJOR
+	*mat_p = glm::transpose(glm::inverse(*reinterpret_cast<const glm::mat4*>(&mat)));
+#else
+	*mat_p = glm::inverse(*reinterpret_cast<const glm::mat4*>(&mat));
+#endif
+}
+
 
 toy_fmat4x4_t TRS (const toy_fvec3_t& translation, const toy_fmat4x4_t& rotation, const toy_fvec3_t& scale) {
 #if TOY_MATRIX_ROW_MAJOR
@@ -282,7 +292,7 @@ void orthographic_vk (float width, float height, float z_near, float z_far, toy_
 
 void perspective_vk (float fovy, float aspect, float z_near, float z_far, toy_fmat4x4_t* output)
 {
-	const float tan_fov = std::tanf(fovy / 2.0f);
+	const float tan_fov = std::tanf(toy::radian(fovy / 2.0f));
 	const float y_near = z_near * tan_fov;
 	const float y_far = z_far * tan_fov;
 	const float x_near = y_near * aspect;

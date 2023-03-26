@@ -1,10 +1,12 @@
 #include "../include/auxiliary/toy_built_in_pipeline.h"
 
 #include "../toy_assert.h"
+#include "vulkan_pipeline/base.h"
+#include "render_pass/main_camera.h"
 #include <cstring>
 
-TOY_EXTERN_C_START
 
+TOY_EXTERN_C_START
 
 static void allocate_pipeline_cmds (
 	toy_vulkan_driver_t* vk_driver,
@@ -39,18 +41,27 @@ static void allocate_pipeline_cmds (
 }
 
 
-void toy_create_built_in_vulkan_pipeline (
+toy_built_in_pipeline_p toy_create_built_in_vulkan_pipeline (
 	toy_vulkan_driver_t* vk_driver,
 	toy_memory_allocator_t* alc,
-	toy_built_in_pipeline_t* output,
 	toy_error_t* error)
 {
-	memset(output, 0, sizeof(*output));
+	VkDevice dev = vk_driver->device.handle;
+	const VkAllocationCallbacks* vk_alc_cb = vk_driver->vk_alc_cb_p;
 
-	toy_init_built_in_vulkan_graphic_pipeline_config();
-
-	auto pipeline_cfg = toy_get_built_in_vulkan_graphic_pipeline_config();
 	toy_file_interface_t file_api = toy_std_file_interface();
+	toy_vulkan_shader_loader_t shader_loader;
+	shader_loader.file_api = &file_api;
+	shader_loader.alc = &alc->list_alc;
+	shader_loader.tmp_alc = &alc->buddy_alc;
+
+	toy_built_in_pipeline_p pipeline = (toy_built_in_pipeline_p)toy_alloc_aligned(&alc->list_alc, sizeof(toy_built_in_pipeline_t), sizeof(void*));
+	if (NULL == pipeline) {
+		toy_err(TOY_ERROR_MEMORY_HOST_ALLOCATION_FAILED, "Alloc built in render pipeline failed", error);
+		goto FAIL_ALLOC_PIPELINE;
+	}
+
+	memset(pipeline, 0, sizeof(*pipeline));
 
 	for (uint32_t i = 0; i < vk_driver->swapchain.frame_count; ++i) {
 		toy_create_built_in_vulkan_frame_resource(
@@ -58,69 +69,109 @@ void toy_create_built_in_vulkan_pipeline (
 			4 * 1024 * 1024,
 			&vk_driver->vk_allocator,
 			vk_driver->vk_alc_cb_p,
-			&output->frame_res[i],
+			&pipeline->frame_res[i],
 			error);
 		if (toy_is_failed(*error)) {
 			for (uint32_t j = i; j > 0; --j)
-				toy_destroy_built_in_vulkan_frame_resource(&vk_driver->device, &vk_driver->vk_allocator, vk_driver->vk_alc_cb_p, &output->frame_res[j - 1]);
+				toy_destroy_built_in_vulkan_frame_resource(&vk_driver->device, &vk_driver->vk_allocator, vk_driver->vk_alc_cb_p, &pipeline->frame_res[j - 1]);
 			goto FAIL_FRAME_RESOURCES;
 		}
 	}
 
-	toy_vulkan_shader_loader_t shader_loader;
-	shader_loader.file_api = &file_api;
-	shader_loader.alc = &alc->list_alc;
-	shader_loader.tmp_alc = &alc->buddy_alc;
+	toy_creaet_built_in_vulkan_descriptor_set_layouts(
+		dev, vk_alc_cb, &pipeline->desc_set_layouts, error);
+	if (toy_is_failed(*error))
+		goto FAIL_DESC_SET_LAYOUT;
 
-	toy_create_built_in_vulkan_render_pass_main_camera(
-		vk_driver,
-		&alc->buddy_alc,
-		&shader_loader,
-		&output->built_in_desc_set_layout,
-		&output->render_pass.main_camera,
+	toy_create_built_in_vulkan_pipeline_layouts(
+		dev, &pipeline->desc_set_layouts, vk_alc_cb, &pipeline->pipelline_layouts, error);
+	if (toy_is_failed(*error))
+		goto FAIL_PIPELINE_LAYOUT;
+
+	toy_create_built_in_vulkan_render_passes(
+		vk_driver, &alc->buddy_alc, &pipeline->render_passes, error);
+	if (toy_is_failed(*error))
+		goto FAIL_RENDER_PASS;
+
+	toy_create_built_in_vulkan_pipelines(
+		vk_driver, &shader_loader,
+		&pipeline->desc_set_layouts, &pipeline->pipelline_layouts,
+		&pipeline->render_passes, &alc->buddy_alc,
+		&pipeline->pipelines,
 		error);
 	if (toy_is_failed(*error))
-		goto FAIL_PASS_MAIN_CAMERA;
+		goto FAIL_PIPELINE;
 
-	allocate_pipeline_cmds(vk_driver, output, error);
+	toy_create_built_in_render_pass_context(
+		vk_driver, &pipeline->render_passes,
+		&alc->buddy_alc,
+		&pipeline->pass_context,
+		error);
+	if (toy_is_failed(*error))
+		goto FAIL_RENDER_PASS_CONTEXT;
+
+	allocate_pipeline_cmds(vk_driver, pipeline, error);
 	if (toy_is_failed(*error))
 		goto FAIL_PASS_MAIN_CAMERA_CMD;
 
 	toy_ok(error);
-	return;
+	return pipeline;
 
 FAIL_PASS_MAIN_CAMERA_CMD:
-	output->render_pass.main_camera.destroy_pass(
-		vk_driver, &output->render_pass.main_camera, &alc->buddy_alc);
-FAIL_PASS_MAIN_CAMERA:
+	toy_destroy_built_in_render_pass_context(
+		vk_driver, &pipeline->pass_context, &alc->buddy_alc);
+FAIL_RENDER_PASS_CONTEXT:
+	toy_destroy_built_in_vulkan_pipelines(
+		vk_driver, &pipeline->pipelines);
+FAIL_PIPELINE:
+	toy_destroy_built_in_vulkan_render_passes(
+		vk_driver, &alc->buddy_alc, &pipeline->render_passes);
+FAIL_RENDER_PASS:
+	toy_destroy_built_in_vulkan_pipeine_layouts(
+		dev, vk_alc_cb, &pipeline->pipelline_layouts);
+FAIL_PIPELINE_LAYOUT:
 	toy_destroy_built_in_vulkan_descriptor_set_layouts(
-		&vk_driver->device, vk_driver->vk_alc_cb_p, &output->built_in_desc_set_layout);
+		dev, vk_alc_cb, &pipeline->desc_set_layouts);
+FAIL_DESC_SET_LAYOUT:
 	for (uint32_t i = vk_driver->swapchain.frame_count; i > 0; --i) {
 		toy_destroy_built_in_vulkan_frame_resource(
-			&vk_driver->device, &vk_driver->vk_allocator, vk_driver->vk_alc_cb_p, &output->frame_res[i - 1]);
+			&vk_driver->device, &vk_driver->vk_allocator, vk_driver->vk_alc_cb_p, &pipeline->frame_res[i - 1]);
 	}
 FAIL_FRAME_RESOURCES:
-	return;
+	toy_free_aligned(&alc->list_alc, pipeline);
+FAIL_ALLOC_PIPELINE:
+	return NULL;
 }
 
 
 void toy_destroy_built_in_vulkan_pipeline (
 	toy_vulkan_driver_t* vk_driver,
 	toy_memory_allocator_t* alc,
-	toy_built_in_pipeline_t* pipeline)
+	toy_built_in_pipeline_p pipeline)
 {
+	if (NULL == pipeline)
+		return;
+
+	VkDevice dev = vk_driver->device.handle;
+	const VkAllocationCallbacks* vk_alc_cb = vk_driver->vk_alc_cb_p;
+
 	// No need to free pipeline commands, vkDestroyCommandPool will do it implicitly
 
-	pipeline->render_pass.main_camera.destroy_pass(
-		vk_driver, &pipeline->render_pass.main_camera, &alc->buddy_alc);
-
+	toy_destroy_built_in_render_pass_context(
+		vk_driver, &pipeline->pass_context, &alc->buddy_alc);
+	toy_destroy_built_in_vulkan_pipelines(
+		vk_driver, &pipeline->pipelines);
+	toy_destroy_built_in_vulkan_render_passes(
+		vk_driver, &alc->buddy_alc, &pipeline->render_passes);
+	toy_destroy_built_in_vulkan_pipeine_layouts(
+		dev, vk_alc_cb, &pipeline->pipelline_layouts);
 	toy_destroy_built_in_vulkan_descriptor_set_layouts(
-		&vk_driver->device, vk_driver->vk_alc_cb_p, &pipeline->built_in_desc_set_layout);
-
+		dev, vk_alc_cb, &pipeline->desc_set_layouts);
 	for (uint32_t i = vk_driver->swapchain.frame_count; i > 0; --i) {
 		toy_destroy_built_in_vulkan_frame_resource(
 			&vk_driver->device, &vk_driver->vk_allocator, vk_driver->vk_alc_cb_p, &pipeline->frame_res[i - 1]);
 	}
+	toy_free_aligned(&alc->list_alc, pipeline);
 }
 
 
@@ -152,7 +203,7 @@ void toy_draw_scene (
 	toy_vulkan_driver_t* vk_driver,
 	toy_scene_t* scene,
 	toy_asset_manager_t* asset_mgr,
-	toy_built_in_pipeline_t* pipeline,
+	toy_built_in_pipeline_p pipeline,
 	toy_error_t* error)
 {
 	VkResult vk_err;
@@ -164,8 +215,8 @@ void toy_draw_scene (
 	if (toy_is_failed(*error))
 		goto FAIL_RESET_FRAME_RESOURCE;
 
-	pipeline->render_pass.main_camera.prepare(
-		&pipeline->render_pass.main_camera, vk_driver, frame_res, scene, asset_mgr);
+	toy_prepare_render_pass_main_camera(
+		vk_driver, pipeline, scene, asset_mgr);
 
 	toy_unmap_vulkan_buffer_memory(
 		vk_driver->device.handle, &frame_res->uniform_stack.buffer, error);
@@ -183,9 +234,10 @@ void toy_draw_scene (
 		return;
 	}
 
-	pipeline->render_pass.main_camera.run(
-		&pipeline->render_pass.main_camera,
-		frame_res, scene, vk_driver, asset_mgr, &pipeline->built_in_desc_set_layout, draw_cmd, error);
+	toy_run_render_pass_main_camera(
+		pipeline, frame_res, scene, vk_driver, asset_mgr,
+		&pipeline->desc_set_layouts,
+		draw_cmd, error);
 	if (toy_is_failed(*error))
 		goto FAIL_DRAW_PASS_MAIN_CAMERA;
 

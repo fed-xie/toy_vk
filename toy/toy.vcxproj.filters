@@ -61,9 +61,6 @@
     <Filter Include="头文件\include\auxiliary">
       <UniqueIdentifier>{b7273faf-c3cb-432c-83c7-a5bc86076e7e}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\include\auxiliary\render_pass">
-      <UniqueIdentifier>{0edeb642-1585-49d0-be42-f4de5f29162d}</UniqueIdentifier>
-    </Filter>
     <Filter Include="源文件\auxiliary">
       <UniqueIdentifier>{e1066844-0e55-412d-80a0-b1ae8e392844}</UniqueIdentifier>
     </Filter>
@@ -82,8 +79,14 @@
     <Filter Include="头文件\auxiliary">
       <UniqueIdentifier>{8dae0226-54aa-4183-a37d-32a70649bc58}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\auxiliary\shader">
-      <UniqueIdentifier>{3a70cc2b-2583-4503-87c1-53c732d43890}</UniqueIdentifier>
+    <Filter Include="源文件\auxiliary\vulkan_pipeline">
+      <UniqueIdentifier>{fd6ab002-c0a8-42ae-980e-f037495b5557}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\auxiliary\vulkan_pipeline">
+      <UniqueIdentifier>{d29af9c4-6603-4682-8642-9890bdf9b5a8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\auxiliary\render_pass">
+      <UniqueIdentifier>{50f63fce-ac87-480c-9190-8c86c5fd610b}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -180,9 +183,6 @@
     <ClInclude Include="src\include\toy_asset.h">
       <Filter>头文件\include</Filter>
     </ClInclude>
-    <ClInclude Include="src\include\auxiliary\render_pass\main_camera.h">
-      <Filter>头文件\include\auxiliary\render_pass</Filter>
-    </ClInclude>
     <ClInclude Include="src\include\toy_scene.h">
       <Filter>头文件\include</Filter>
     </ClInclude>
@@ -201,14 +201,35 @@
     <ClInclude Include="src\include\auxiliary\toy_built_in_pipeline.h">
       <Filter>头文件\include\auxiliary</Filter>
     </ClInclude>
-    <ClInclude Include="src\include\auxiliary\render_pass\pass_base.h">
-      <Filter>头文件\include\auxiliary\render_pass</Filter>
-    </ClInclude>
     <ClInclude Include="src\include\platform\vulkan\toy_vulkan_asset_loader.h">
       <Filter>头文件\include\platform\vulkan</Filter>
     </ClInclude>
-    <ClInclude Include="src\auxiliary\shader\mesh.h">
-      <Filter>头文件\auxiliary\shader</Filter>
+    <ClInclude Include="src\include\scene\toy_scene_direct_light.h">
+      <Filter>头文件\include\scene</Filter>
+    </ClInclude>
+    <ClInclude Include="src\auxiliary\vulkan_pipeline\descriptor_set_layout.h">
+      <Filter>头文件\auxiliary\vulkan_pipeline</Filter>
+    </ClInclude>
+    <ClInclude Include="src\auxiliary\vulkan_pipeline\framebuffer.h">
+      <Filter>头文件\auxiliary\vulkan_pipeline</Filter>
+    </ClInclude>
+    <ClInclude Include="src\auxiliary\vulkan_pipeline\pipeline.h">
+      <Filter>头文件\auxiliary\vulkan_pipeline</Filter>
+    </ClInclude>
+    <ClInclude Include="src\auxiliary\vulkan_pipeline\pipeline_layout.h">
+      <Filter>头文件\auxiliary\vulkan_pipeline</Filter>
+    </ClInclude>
+    <ClInclude Include="src\auxiliary\vulkan_pipeline\render_pass.h">
+      <Filter>头文件\auxiliary\vulkan_pipeline</Filter>
+    </ClInclude>
+    <ClInclude Include="src\auxiliary\vulkan_pipeline\base.h">
+      <Filter>头文件\auxiliary\vulkan_pipeline</Filter>
+    </ClInclude>
+    <ClInclude Include="src\auxiliary\render_pass\main_camera.h">
+      <Filter>头文件\auxiliary\render_pass</Filter>
+    </ClInclude>
+    <ClInclude Include="src\auxiliary\render_pass\shadow.h">
+      <Filter>头文件\auxiliary\render_pass</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -317,11 +338,26 @@
     <ClCompile Include="src\auxiliary\toy_built_in_pipeline.cpp">
       <Filter>源文件\auxiliary</Filter>
     </ClCompile>
-    <ClCompile Include="src\auxiliary\render_pass\pass_base.c">
+    <ClCompile Include="src\auxiliary\render_pass\shadow.cpp">
       <Filter>源文件\auxiliary\render_pass</Filter>
     </ClCompile>
-    <ClCompile Include="src\auxiliary\shader\mesh.c">
-      <Filter>源文件\auxiliary\shader</Filter>
+    <ClCompile Include="src\scene\toy_scene_direct_light.cpp">
+      <Filter>源文件\scene</Filter>
+    </ClCompile>
+    <ClCompile Include="src\auxiliary\vulkan_pipeline\descriptor_set_layout.c">
+      <Filter>源文件\auxiliary\vulkan_pipeline</Filter>
+    </ClCompile>
+    <ClCompile Include="src\auxiliary\vulkan_pipeline\pipeline.c">
+      <Filter>源文件\auxiliary\vulkan_pipeline</Filter>
+    </ClCompile>
+    <ClCompile Include="src\auxiliary\vulkan_pipeline\pipeline_layout.c">
+      <Filter>源文件\auxiliary\vulkan_pipeline</Filter>
+    </ClCompile>
+    <ClCompile Include="src\auxiliary\vulkan_pipeline\render_pass.c">
+      <Filter>源文件\auxiliary\vulkan_pipeline</Filter>
+    </ClCompile>
+    <ClCompile Include="src\auxiliary\vulkan_pipeline\base.c">
+      <Filter>源文件\auxiliary\vulkan_pipeline</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

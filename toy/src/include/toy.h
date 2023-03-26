@@ -46,7 +46,7 @@ struct toy_app_t {
 	toy_app_loop_event_t* loop_event;
 #if TOY_DRIVER_VULKAN
 	toy_vulkan_driver_t vk_driver;
-	toy_built_in_pipeline_t vk_built_in_pipeline;
+	toy_built_in_pipeline_p vk_built_in_pipeline;
 	VkAllocationCallbacks vk_alc_cb;
 	VkAllocationCallbacks *vk_alc_cb_p;
 #endif

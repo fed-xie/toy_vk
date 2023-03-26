@@ -4,7 +4,7 @@
 #include "../include/auxiliary/toy_built_in_ecs.h"
 #include "../include/auxiliary/toy_built_in_pipeline.h"
 
-#include "../auxiliary/shader/mesh.h"
+#include "../auxiliary/vulkan_pipeline/base.h"
 
 #include <cassert>
 
@@ -60,7 +60,7 @@ void load_scene (toy_app_t* app, game_data_t* gd)
 	assert(toy_is_ok(err));
 
 	uint32_t material_index = toy_alloc_vulkan_descriptor_set_single_texture(
-		&app->asset_mgr, &app->vk_built_in_pipeline.built_in_desc_set_layout.single_texture, &err);
+		&app->asset_mgr, &app->vk_built_in_pipeline->desc_set_layouts.single_texture, &err);
 	assert(toy_is_ok(err));
 	toy_built_in_descriptor_set_single_texture_t** desc_set_data_p = (toy_built_in_descriptor_set_single_texture_t**)toy_get_asset_item(
 		&app->asset_mgr.asset_pools.material, material_index);
@@ -80,7 +80,7 @@ void load_scene (toy_app_t* app, game_data_t* gd)
 	mesh2->primitive_index = mesh->primitive_index;
 	toy_add_asset_ref(&app->asset_mgr.asset_pools.mesh_primitive, mesh->primitive_index, 1);
 	uint32_t material2_index = toy_alloc_vulkan_descriptor_set_single_texture(
-		&app->asset_mgr, &app->vk_built_in_pipeline.built_in_desc_set_layout.single_texture, &err);
+		&app->asset_mgr, &app->vk_built_in_pipeline->desc_set_layouts.single_texture, &err);
 	assert(toy_is_ok(err));
 	toy_built_in_descriptor_set_single_texture_t** desc_set2_data_p = (toy_built_in_descriptor_set_single_texture_t**)toy_get_asset_item(
 		&app->asset_mgr.asset_pools.material, material2_index);
@@ -96,19 +96,26 @@ void load_scene (toy_app_t* app, game_data_t* gd)
 
 	for (uint32_t i = 0; i < sizeof(scene->object_ids) / sizeof(scene->object_ids[0]); ++i) {
 		scene->object_ids[i] = i + 1;
-		scene->meshes[i] = mesh_index;
+		scene->meshes[i] = (i % 10) ? mesh_index : mesh2_index;
 		float offset = (i & 1) ? (float)i : -(float)i;
-		scene->inst_matrices[i] = toy::TRS(toy_fvec3_t{ offset / 2.0f, offset / 4.0f, -static_cast<float>(i) }, toy::identity_quaternion(), { 1, 1, 1 });
+		float scale = i * 1.1f;
+		scene->inst_matrices[i] = toy::TRS(toy_fvec3_t{ offset / 2.0f, offset / 4.0f, -static_cast<float>(i) }, toy::identity_quaternion(), { scale, scale, scale });
 	}
-	scene->meshes[12] = mesh2_index;
+	scene->meshes[3] = mesh2_index;
+	scene->meshes[126] = mesh2_index;
+	scene->inst_matrices[127] = toy::TRS({ 0, -0.5f, 0 }, toy::fquat(toy::radian(-90.0f), toy_fvec3_t{ 1, 0, 0 }), { 20, 20, 1 });
+	scene->meshes[127] = mesh2_index;
 	scene->object_count = 128;
 
-	toy_init_perspective_camera(45.0f, 4.0f / 3.0f, 0.1f, 1000.0f, &scene->main_camera);
 	toy_scene_camera_t& cam = scene->main_camera;
-	cam.eye = toy_fvec3_t{ 0.0f, 1.0f, 4.0f };
-	cam.target = toy_fvec3_t{ 0.0f, 0.0f, 0.0f };
+	cam.eye = toy_fvec3_t{ 0.5f, 0.5f, 3.0f };
+	cam.target = toy_fvec3_t{ 0.0f, 0.0f, -7.0f };
 	cam.up = toy_fvec3_t{ 0.0f, 1.0f, 0.0f };
-	toy::look_at(cam.eye, cam.target - cam.eye, cam.up, &cam.view_matrix);
+	cam.type = TOY_CAMERA_TYPE_PERSPECTIVE;
+	cam.perspective.fovy = 45.0f;
+	cam.perspective.aspect = 4.0f / 3.0f;
+	cam.perspective.z_near = 0.1f;
+	cam.perspective.z_far = 200.0f;
 
 	gd->mesh_id = 3;
 	gd->mesh_index = mesh_index;
@@ -157,12 +164,13 @@ void update_scene (toy_app_t* app, void* user_data, uint64_t delta_ms)
 	float angle = (float)delta_ms / 1000.0f * (2 * toy::pi<float>());
 	app->top_scene->inst_matrices[gd->mesh_id] = app->top_scene->inst_matrices[gd->mesh_id] * toy::fquat_to_fmat4x4(toy::fquat(angle, toy_fvec3_t{ 0, 0, 1 }));
 
-	float speed = 1.0f;
+	float speed = 5.0f;
 	{
 		float distance = speed * ((float)delta_ms / 1000.0f);
 		float radian = toy::radian(90 * (delta_ms / 1000.0f));
 		toy_fvec3_t forward = toy::normalize(camera->target - camera->eye);
 		toy_fvec3_t right = toy::normalize(toy::cross(forward, camera->up));
+		toy_fvec3_t up = toy::normalize(camera->up);
 
 		toy_fvec3_t translation = toy_fvec3_t{ 0, 0, 0 };
 		toy_fquat_t rotation = toy::identity_quaternion();
@@ -175,6 +183,10 @@ void update_scene (toy_app_t* app, void* user_data, uint64_t delta_ms)
 			translation = translation + distance * forward;
 		if (TOY_KEY_STATE_DOWN == toy_get_keyboard_key(keybd, 'S'))
 			translation = translation - distance * forward;
+		if (TOY_KEY_STATE_DOWN == toy_get_keyboard_key(keybd, 'Q'))
+			translation = translation + distance * up;
+		if (TOY_KEY_STATE_DOWN == toy_get_keyboard_key(keybd, 'E'))
+			translation = translation - distance * up;
 		if (TOY_KEY_STATE_DOWN == toy_get_keyboard_key(keybd, VK_UP))
 			rotation = toy::fquat(radian, toy_fvec3_t{ 1, 0, 0 }) * rotation;
 		if (TOY_KEY_STATE_DOWN == toy_get_keyboard_key(keybd, VK_DOWN))
@@ -184,10 +196,20 @@ void update_scene (toy_app_t* app, void* user_data, uint64_t delta_ms)
 		if (TOY_KEY_STATE_DOWN == toy_get_keyboard_key(keybd, VK_LEFT))
 			rotation = toy::fquat(-radian, toy_fvec3_t{ 0, -1, 0 }) * rotation;
 
+		if (TOY_KEY_STATE_DOWN == toy_get_keyboard_key(keybd, 'U')) {
+			camera->perspective.fovy += 1.0f;
+			if (camera->perspective.fovy >= 170.0f)
+				camera->perspective.fovy = 170.0f;
+		}
+		if (TOY_KEY_STATE_DOWN == toy_get_keyboard_key(keybd, 'J')) {
+			camera->perspective.fovy -= 1.0f;
+			if (camera->perspective.fovy <= 5.0f)
+				camera->perspective.fovy = 5.0f;
+		}
+
 		camera->eye = camera->eye + translation;
 		camera->target = camera->eye + rotation * forward;
 		camera->up = rotation * camera->up;
-		toy::look_at(camera->eye, camera->target - camera->eye, camera->up, &camera->view_matrix);
 	}
 
 	if (TOY_KEY_STATE_DOWN == toy_get_keyboard_key(keybd, VK_ESCAPE))

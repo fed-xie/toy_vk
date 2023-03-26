@@ -1,328 +1,15 @@
-#include "../../include/auxiliary/render_pass/main_camera.h"
+#include "main_camera.h"
 
 #include "../../include/toy_file.h"
 #include "../../include/toy_allocator.h"
 #include "../../toy_assert.h"
 #include <string.h>
-#include "../shader/mesh.h"
+#include "../vulkan_pipeline/base.h"
 
-
-static VkResult create_descriptor_set_layout (
-	VkDevice dev,
-	const VkAllocationCallbacks* vk_alc_cb,
-	toy_vulkan_descriptor_set_layout_t* output)
-{
-	static const VkDescriptorSetLayoutBinding layout_bindings[] = {
-		{
-			.binding = 0,
-			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			.descriptorCount = 1,
-			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-			.pImmutableSamplers = NULL,
-		}, {
-			.binding = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			.descriptorCount = 1,
-			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-			.pImmutableSamplers = NULL,
-		}, {
-			.binding = 2,
-			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			.descriptorCount = 1,
-			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-			.pImmutableSamplers = NULL,
-		},{
-			.binding = 3,
-			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			.descriptorCount = 1,
-			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-			.pImmutableSamplers = NULL,
-		},
-	};
-	static const binding_count = sizeof(layout_bindings) / sizeof(layout_bindings[0]);
-	return toy_create_vulkan_descriptor_set_layout(dev, layout_bindings, binding_count, vk_alc_cb, output);
-}
-
-
-static void create_framebuffers (
-	toy_vulkan_driver_t* vk_driver,
-	VkRenderPass handle,
-	toy_vulkan_render_pass_context_main_camera_t* ctx,
-	const toy_allocator_t* alc,
-	toy_error_t* error)
-{
-	VkResult vk_err;
-
-	toy_create_vulkan_image_depth(
-		&vk_driver->vk_allocator,
-		vk_driver->render_config.depth_format,
-		VK_SAMPLE_COUNT_1_BIT,
-		vk_driver->swapchain.extent.width,
-		vk_driver->swapchain.extent.height,
-		&ctx->depth_image, error);
-	if (toy_is_failed(*error))
-		return;
-
-	ctx->frame_buffers = toy_alloc_aligned(alc, sizeof(VkFramebuffer) * vk_driver->swapchain.image_count, sizeof(VkFramebuffer));
-	if (NULL == ctx->frame_buffers) {
-		toy_err(TOY_ERROR_MEMORY_HOST_ALLOCATION_FAILED, "Failed to alloc VkFramebuffer", error);
-		toy_destroy_vulkan_image(vk_driver->device.handle, &ctx->depth_image, vk_driver->vk_alc_cb_p);
-		return;
-	}
-
-	for (uint32_t i = 0; i < vk_driver->swapchain.image_count; ++i) {
-		VkImageView attachments[] = {
-			vk_driver->swapchain.present_views[i],
-			ctx->depth_image.view,
-		};
-		VkFramebufferCreateInfo framebuffer_ci;
-		framebuffer_ci.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebuffer_ci.pNext = NULL;
-		framebuffer_ci.flags = 0;
-		framebuffer_ci.renderPass = handle;
-		framebuffer_ci.attachmentCount = 2;
-		framebuffer_ci.pAttachments = attachments;
-		framebuffer_ci.width = vk_driver->swapchain.extent.width;
-		framebuffer_ci.height = vk_driver->swapchain.extent.height;
-		framebuffer_ci.layers = 1;
-		vk_err = vkCreateFramebuffer(
-			vk_driver->device.handle, &framebuffer_ci, vk_driver->vk_alc_cb_p, &ctx->frame_buffers[i]);
-		if (VK_SUCCESS != vk_err) {
-			for (uint32_t j = i; j > 0; --j)
-				vkDestroyFramebuffer(vk_driver->device.handle, ctx->frame_buffers[j-1], vk_driver->vk_alc_cb_p);
-			toy_free_aligned(alc, ctx->frame_buffers);
-			toy_destroy_vulkan_image(vk_driver->device.handle, &ctx->depth_image, vk_driver->vk_alc_cb_p);
-			toy_err_vkerr(TOY_ERROR_CREATE_OBJECT_FAILED, vk_err, "vkCreateFramebuffer failed", error);
-			return;
-		}
-	}
-
-	toy_ok(error);
-	return;
-}
-
-
-static void destroy_framebuffers (
-	toy_vulkan_driver_t* vk_driver,
-	toy_vulkan_render_pass_context_main_camera_t* ctx,
-	const toy_allocator_t* alc)
-{
-	VkDevice dev = vk_driver->device.handle;
-	const VkAllocationCallbacks* vk_alc_cb = vk_driver->vk_alc_cb_p;
-
-	for (uint32_t i = vk_driver->swapchain.image_count; i > 0; --i)
-		vkDestroyFramebuffer(dev, ctx->frame_buffers[i - 1], vk_alc_cb);
-	toy_free_aligned(alc, ctx->frame_buffers);
-
-	toy_destroy_vulkan_image(dev, &ctx->depth_image, vk_alc_cb);
-}
-
-
-static void create_render_pass_handle (
-	toy_vulkan_driver_t* vk_driver,
-	VkRenderPass* output,
-	toy_error_t* error)
-{
-	VkFormat present_format = vk_driver->device.surface.format.format;
-	VkFormat depth_format = vk_driver->render_config.depth_format;
-	VkSampleCountFlagBits msaa_count = VK_SAMPLE_COUNT_1_BIT;
-
-	VkAttachmentReference refs[3];
-	VkAttachmentDescription attachment_descs[3];
-
-	// present attachment
-	attachment_descs[0].flags = 0;
-	attachment_descs[0].format = present_format;
-	attachment_descs[0].samples = VK_SAMPLE_COUNT_1_BIT;
-	attachment_descs[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	attachment_descs[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	attachment_descs[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	attachment_descs[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	attachment_descs[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	attachment_descs[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-	refs[0].attachment = 0;
-	refs[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	// depth-stencil attachment
-	attachment_descs[1].flags = 0;
-	attachment_descs[1].format = depth_format;
-	attachment_descs[1].samples = msaa_count;
-	attachment_descs[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	attachment_descs[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // if msaa count > 1, store op must be DONT_CARE
-	attachment_descs[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	attachment_descs[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	attachment_descs[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	attachment_descs[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-	refs[1].attachment = 1;
-	refs[1].layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-	// msaa sample attachment
-	attachment_descs[2].flags = 0;
-	attachment_descs[2].format = present_format;
-	attachment_descs[2].samples = msaa_count;
-	attachment_descs[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	attachment_descs[2].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;  // if msaa count > 1, store op must be DONT_CARE
-	attachment_descs[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	attachment_descs[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	attachment_descs[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	attachment_descs[2].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	refs[2].attachment = 2;
-	refs[2].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-	VkSubpassDescription subpass_desc[1];
-	subpass_desc[0].flags = 0;
-	subpass_desc[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS; // Available: graphics | ray-tracing | compute
-	subpass_desc[0].inputAttachmentCount = 0;
-	subpass_desc[0].pInputAttachments = NULL;
-	if (msaa_count > VK_SAMPLE_COUNT_1_BIT) {
-		subpass_desc[0].colorAttachmentCount = 1;
-		subpass_desc[0].pColorAttachments = &refs[2];
-		subpass_desc[0].pResolveAttachments = &refs[0];
-	}
-	else {
-		subpass_desc[0].colorAttachmentCount = 1;
-		subpass_desc[0].pColorAttachments = &refs[0];
-		subpass_desc[0].pResolveAttachments = NULL;
-	}
-	subpass_desc[0].pDepthStencilAttachment = &refs[1];
-	subpass_desc[0].preserveAttachmentCount = 0;
-	subpass_desc[0].pPreserveAttachments = NULL;
-
-	VkSubpassDependency subpass_dep[2];
-	subpass_dep[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-	subpass_dep[0].dstSubpass = 0;
-	subpass_dep[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	subpass_dep[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	subpass_dep[0].srcAccessMask = 0;
-	subpass_dep[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	subpass_dep[0].dependencyFlags = 0;
-	subpass_dep[1].srcSubpass = VK_SUBPASS_EXTERNAL;
-	subpass_dep[1].dstSubpass = 0;
-	subpass_dep[1].srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-	subpass_dep[1].srcAccessMask = 0;
-	subpass_dep[1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-	subpass_dep[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-	subpass_dep[1].dependencyFlags = 0;
-
-	VkRenderPassCreateInfo ci;
-	ci.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	ci.pNext = NULL;
-	ci.flags = 0;
-	ci.attachmentCount = msaa_count > VK_SAMPLE_COUNT_1_BIT ? 3 : 2;
-	ci.pAttachments = attachment_descs;
-	ci.subpassCount = sizeof(subpass_desc) / sizeof(*subpass_desc);
-	ci.pSubpasses = subpass_desc;
-	ci.dependencyCount = sizeof(subpass_dep) / sizeof(*subpass_dep);
-	ci.pDependencies = subpass_dep;
-
-	VkResult vk_err = vkCreateRenderPass(
-		vk_driver->device.handle,
-		&ci,
-		vk_driver->vk_alc_cb_p,
-		output);
-	if (VK_SUCCESS != vk_err) {
-		toy_err_vkerr(TOY_ERROR_CREATE_OBJECT_FAILED, vk_err, "vkCreateRenderPass failed", error);
-		return;
-	}
-
-	toy_ok(error);
-	return;
-}
-
-
-static void create_shaders (
-	toy_vulkan_driver_t* vk_driver,
-	toy_vulkan_shader_loader_t* shader_loader,
-	toy_built_in_vulkan_descriptor_set_layout_t* built_in_layouts,
-	VkRenderPass pass_handle,
-	toy_vulkan_render_pass_context_main_camera_t* ctx,
-	const toy_allocator_t* alc,
-	toy_error_t* error)
-{
-	ctx->shaders.mesh = toy_get_shader_module_mesh();
-	
-	toy_built_in_shader_module_t* shaders = (toy_built_in_shader_module_t*)(&ctx->shaders);
-	const int shader_count = sizeof(ctx->shaders) / sizeof(toy_built_in_shader_module_t);
-
-	int desc_set_idx = 0, layout_idx = 0, pipeline_idx = 0;
-	for (; desc_set_idx < shader_count; ++desc_set_idx) {
-		shaders[desc_set_idx].create_desc_set_layouts(vk_driver, built_in_layouts, error);
-		if (toy_is_failed(*error))
-			goto FAIL_DESC_SET_LAYOUTS;
-	}
-
-	for (; layout_idx < shader_count; ++layout_idx) {
-		shaders[layout_idx].create_layout(vk_driver, built_in_layouts, &shaders[layout_idx].layout, error);
-		if (toy_is_failed(*error))
-			goto FAIL_LAYOUTS;
-	}
-
-	for (; pipeline_idx < shader_count; ++pipeline_idx) {
-		shaders[pipeline_idx].create_module(
-			vk_driver,
-			shader_loader, toy_get_built_in_vulkan_graphic_pipeline_config(),
-			shaders[pipeline_idx].layout, pass_handle,
-			alc,
-			&shaders[pipeline_idx],
-			error);
-		if (toy_is_failed(*error))
-			goto FAIL_PIPELINE;
-	}
-
-	toy_ok(error);
-	return;
-
-FAIL_PIPELINE:
-	for (int i = pipeline_idx; i > 0; --i)
-		shaders[i - 1].destroy_module(&shaders[i - 1], vk_driver, alc);
-FAIL_LAYOUTS:
-	for (int i = layout_idx; i > 0; --i)
-		vkDestroyPipelineLayout(vk_driver->device.handle, shaders[i - 1].layout.handle, vk_driver->vk_alc_cb_p);
-FAIL_DESC_SET_LAYOUTS:
-	// Do nothing, leave the descriptor sets clean work to upper level code
-	return;
-}
-
-
-static void destroy_shaders (
-	toy_vulkan_driver_t* vk_driver,
-	const toy_allocator_t* alc,
-	toy_vulkan_render_pass_context_main_camera_t* ctx)
-{
-	VkDevice dev = vk_driver->device.handle;
-	const VkAllocationCallbacks* vk_alc_cb = vk_driver->vk_alc_cb_p;
-
-	toy_built_in_shader_module_t* shaders = (toy_built_in_shader_module_t*)(&ctx->shaders);
-	const int shader_count = sizeof(ctx->shaders) / sizeof(toy_built_in_shader_module_t);
-
-	for (int i = shader_count; i > 0; --i) {
-		shaders[i - 1].destroy_module(&shaders[i - 1], vk_driver, alc);
-		vkDestroyPipelineLayout(dev, shaders[i - 1].layout.handle, vk_alc_cb);
-		// Leave the descriptor sets clean work to upper level code
-	}
-}
-
-
-static void destroy_render_pass (
-	toy_vulkan_driver_t* vk_driver,
-	toy_built_in_render_pass_module_t* pass,
-	const toy_allocator_t* alc)
-{
-	VkDevice dev = vk_driver->device.handle;
-	const VkAllocationCallbacks* vk_alc_cb = vk_driver->vk_alc_cb_p;
-
-	toy_vulkan_render_pass_context_main_camera_t* ctx = pass->context;
-
-	destroy_shaders(vk_driver, alc, ctx);
-
-	destroy_framebuffers(vk_driver, ctx, alc);
-
-	toy_free_aligned(alc, ctx);
-
-	vkDestroyRenderPass(dev, pass->handle, vk_alc_cb);
-}
 
 
 static void prepare_camera (
-	toy_vulkan_render_pass_context_main_camera_t* ctx,
+	toy_built_in_vulkan_render_pass_context_t* ctx,
 	toy_built_in_vulkan_frame_resource_t* frame_res,
 	toy_scene_t* scene)
 {
@@ -338,13 +25,13 @@ static void prepare_camera (
 	TOY_ASSERT(VK_WHOLE_SIZE != uniform_offset);
 
 	struct toy_camera_view_project_matrix_t* vp_mem = (struct toy_camera_view_project_matrix_t*)((uintptr_t)frame_res->mapping_memory + uniform_offset);
-	vp_mem->view = scene->main_camera.view_matrix;
-	vp_mem->project = scene->main_camera.project_matrix;
+	toy_calc_camera_view_matrix(&scene->main_camera, &vp_mem->view);
+	toy_calc_camera_project_matrix(&scene->main_camera, &vp_mem->project);
 }
 
 
 static void prepare_model (
-	toy_vulkan_render_pass_context_main_camera_t* ctx,
+	toy_built_in_vulkan_render_pass_context_t* ctx,
 	toy_built_in_vulkan_frame_resource_t* frame_res,
 	toy_scene_t* scene)
 {
@@ -364,7 +51,7 @@ static void prepare_model (
 
 
 static void prepare_instance (
-	toy_vulkan_render_pass_context_main_camera_t* ctx,
+	toy_built_in_vulkan_render_pass_context_t* ctx,
 	toy_built_in_vulkan_frame_resource_t* frame_res,
 	toy_scene_t* scene,
 	toy_asset_manager_t* asset_mgr)
@@ -398,33 +85,34 @@ static void prepare_instance (
 }
 
 
-static void prepare_render_pass (
-	toy_built_in_render_pass_module_t* pass,
+void toy_prepare_render_pass_main_camera (
 	toy_vulkan_driver_t* vk_driver,
-	toy_built_in_vulkan_frame_resource_t* frame_res,
+	toy_built_in_pipeline_t* pipeline,
 	toy_scene_t* scene,
 	toy_asset_manager_t* asset_mgr)
 {
-	toy_vulkan_render_pass_context_main_camera_t* ctx = pass->context;
+	uint32_t current_frame = vk_driver->swapchain.current_frame;
+	toy_built_in_vulkan_frame_resource_t* frame_res = &pipeline->frame_res[current_frame];
 
-	prepare_camera(ctx, frame_res, scene);
-	prepare_model(ctx, frame_res, scene);
-	prepare_instance(ctx, frame_res, scene, asset_mgr);
+	prepare_camera(&pipeline->pass_context, frame_res, scene);
+	prepare_model(&pipeline->pass_context, frame_res, scene);
+	prepare_instance(&pipeline->pass_context, frame_res, scene, asset_mgr);
 }
 
 
 static void update_descriptor_set (
-	toy_built_in_render_pass_module_t* pass,
+	toy_built_in_pipeline_t* pipeline,
 	toy_vulkan_driver_t* vk_driver,
-	toy_built_in_vulkan_frame_resource_t* frame_res,
-	toy_built_in_vulkan_descriptor_set_layout_t* built_in_desc_set_layouts,
 	toy_scene_t* scene,
 	toy_asset_manager_t* asset_mgr)
 {
-	toy_vulkan_render_pass_context_main_camera_t* ctx = pass->context;
+	uint32_t current_frame = vk_driver->swapchain.current_frame;
+	toy_built_in_vulkan_frame_resource_t* frame_res = &pipeline->frame_res[current_frame];
+
+	toy_built_in_vulkan_render_pass_context_t* ctx = &pipeline->pass_context;
 	VkDevice dev = vk_driver->device.handle;
 	VkDescriptorSetLayout desc_set_layouts[] = {
-		built_in_desc_set_layouts->main_camera.handle,
+		pipeline->desc_set_layouts.main_camera.handle,
 	};
 	VkDescriptorSetAllocateInfo desc_set_ai;
 	desc_set_ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -432,9 +120,9 @@ static void update_descriptor_set (
 	desc_set_ai.descriptorPool = frame_res->descriptor_pool;
 	desc_set_ai.descriptorSetCount = sizeof(desc_set_layouts) / sizeof(*desc_set_layouts);
 	desc_set_ai.pSetLayouts = desc_set_layouts;
-	VkResult vk_err = vkAllocateDescriptorSets(dev, &desc_set_ai, &ctx->desc_set);
+	VkResult vk_err = vkAllocateDescriptorSets(dev, &desc_set_ai, &ctx->mvp_desc_set);
 	TODO_ASSERT(VK_SUCCESS == vk_err);
-	VkDescriptorSet desc_set = ctx->desc_set;
+	VkDescriptorSet desc_set = ctx->mvp_desc_set;
 
 	VkDescriptorBufferInfo buffer_info[4];
 	VkWriteDescriptorSet desc_set_writes[4];
@@ -499,7 +187,7 @@ static void update_descriptor_set (
 
 
 static void draw_mesh (
-	toy_built_in_render_pass_module_t* pass,
+	toy_built_in_pipeline_t* pipeline,
 	VkCommandBuffer draw_cmd,
 	toy_built_in_vulkan_descriptor_set_layout_t* built_in_desc_set_layouts,
 	toy_built_in_vulkan_frame_resource_t* frame_res,
@@ -510,7 +198,7 @@ static void draw_mesh (
 	uint32_t instance_count,
 	uint32_t first_instance)
 {
-	toy_vulkan_render_pass_context_main_camera_t* ctx = pass->context;
+	toy_built_in_vulkan_render_pass_context_t* ctx = &pipeline->pass_context;
 
 	toy_mesh_t* mesh = toy_get_asset_item(&asset_mgr->asset_pools.mesh, mesh_index);
 	TOY_ASSERT(NULL != mesh && UINT32_MAX != mesh->primitive_index);
@@ -535,7 +223,7 @@ static void draw_mesh (
 		VkDescriptorSet desc_sets[] = { desc_set };
 		vkCmdBindDescriptorSets(
 			draw_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-			ctx->shaders.mesh.layout.handle,
+			pipeline->pipelline_layouts.mesh.handle,
 			1, sizeof(desc_sets) / sizeof(*desc_sets), desc_sets,
 			0, NULL);
 		*last_material_index = mesh->material_index;
@@ -546,8 +234,8 @@ static void draw_mesh (
 }
 
 
-static void run_render_pass (
-	toy_built_in_render_pass_module_t* pass,
+void toy_run_render_pass_main_camera (
+	toy_built_in_pipeline_t* pipeline,
 	toy_built_in_vulkan_frame_resource_t* frame_res,
 	toy_scene_t* scene,
 	toy_vulkan_driver_t* vk_driver,
@@ -556,7 +244,7 @@ static void run_render_pass (
 	VkCommandBuffer draw_cmd,
 	toy_error_t* error)
 {
-	toy_vulkan_render_pass_context_main_camera_t* ctx = pass->context;
+	toy_built_in_vulkan_render_pass_context_t* ctx = &pipeline->pass_context;
 
 	VkClearColorValue clear_color = { 0.5f, 0.5f, 0.5f, 1.0f };
 	VkClearDepthStencilValue clear_depth = { .depth = 1.0f, .stencil = 0 };
@@ -572,8 +260,8 @@ static void run_render_pass (
 	VkRenderPassBeginInfo render_pass_bi;
 	render_pass_bi.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	render_pass_bi.pNext = NULL;
-	render_pass_bi.renderPass = pass->handle;
-	render_pass_bi.framebuffer = ctx->frame_buffers[vk_driver->swapchain.current_image];
+	render_pass_bi.renderPass = pipeline->render_passes.main_camera;
+	render_pass_bi.framebuffer = ctx->camera_framebuffers[vk_driver->swapchain.current_image];
 	render_pass_bi.renderArea.offset.x = 0;
 	render_pass_bi.renderArea.offset.y = 0;
 	render_pass_bi.renderArea.extent = vk_driver->swapchain.extent;
@@ -581,16 +269,16 @@ static void run_render_pass (
 	render_pass_bi.pClearValues = clear_values;
 	vkCmdBeginRenderPass(draw_cmd, &render_pass_bi, VK_SUBPASS_CONTENTS_INLINE);
 	
-	update_descriptor_set(pass, vk_driver, frame_res, built_in_desc_set_layouts, scene, asset_mgr);
+	update_descriptor_set(pipeline, vk_driver, scene, asset_mgr);
 	
-	VkDescriptorSet desc_sets[] = { ctx->desc_set };
+	VkDescriptorSet desc_sets[] = { ctx->mvp_desc_set };
 	vkCmdBindDescriptorSets(
 		draw_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-		ctx->shaders.mesh.layout.handle,
+		pipeline->pipelline_layouts.mesh.handle,
 		0, sizeof(desc_sets) / sizeof(*desc_sets), desc_sets,
 		0, NULL);
 	
-	vkCmdBindPipeline(draw_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx->shaders.mesh.pipeline);
+	vkCmdBindPipeline(draw_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipelines.mesh);
 
 	vkCmdBindIndexBuffer(
 		draw_cmd,
@@ -608,77 +296,16 @@ static void run_render_pass (
 			++instance_count;
 			continue;
 		}
-		draw_mesh(pass, draw_cmd, built_in_desc_set_layouts, frame_res, vk_driver, asset_mgr, last_mesh, &last_material_index, instance_count, last_inst);
+		draw_mesh(pipeline, draw_cmd, built_in_desc_set_layouts, frame_res, vk_driver, asset_mgr, last_mesh, &last_material_index, instance_count, last_inst);
 		last_mesh = scene->meshes[obj_i];
 		instance_count = 1;
 		last_inst = obj_i;
 	}
 
-	draw_mesh(pass, draw_cmd, built_in_desc_set_layouts, frame_res, vk_driver, asset_mgr, last_mesh, &last_material_index, instance_count, last_inst);
+	draw_mesh(pipeline, draw_cmd, built_in_desc_set_layouts, frame_res, vk_driver, asset_mgr, last_mesh, &last_material_index, instance_count, last_inst);
 
 	vkCmdEndRenderPass(draw_cmd);
 
 	toy_ok(error);
-	return;
-}
-
-
-void toy_create_built_in_vulkan_render_pass_main_camera (
-	toy_vulkan_driver_t* vk_driver,
-	const toy_allocator_t* alc,
-	toy_vulkan_shader_loader_t* shader_loader,
-	toy_built_in_vulkan_descriptor_set_layout_t* desc_set_layous,
-	toy_built_in_render_pass_module_t* output,
-	toy_error_t* error)
-{
-	VkDevice dev = vk_driver->device.handle;
-	const VkAllocationCallbacks* vk_alc_cb = vk_driver->vk_alc_cb_p;
-
-	toy_vulkan_render_pass_context_main_camera_t* ctx = toy_alloc_aligned(
-		alc, sizeof(toy_vulkan_render_pass_context_main_camera_t), sizeof(void*));
-	if (NULL == ctx) {
-		toy_err(TOY_ERROR_MEMORY_HOST_ALLOCATION_FAILED, "Alloc render pass main camera context failed", error);
-		goto FAIL_ALLOC_CONTEXT;
-	}
-
-	VkRenderPass handle = VK_NULL_HANDLE;
-	create_render_pass_handle(vk_driver, &handle, error);
-	if (toy_is_failed(*error))
-		goto FAIL_RENDER_PASS_HANDLE;
-
-	create_framebuffers(vk_driver, handle, ctx, alc, error);
-	if (toy_is_failed(*error))
-		goto FAIL_FRAMEBUFFER;
-
-	VkResult vk_err = create_descriptor_set_layout(
-		dev, vk_alc_cb, &desc_set_layous->main_camera);
-	if (VK_SUCCESS != vk_err) {
-		toy_err_vkerr(TOY_ERROR_CREATE_OBJECT_FAILED, vk_err,
-			"Create main camera render pass descriptor set layout failed", error);
-		goto FAIL_DESCRIPTOR_SET;
-	}
-
-	create_shaders(vk_driver, shader_loader, desc_set_layous, handle, ctx, alc, error);
-	if (toy_is_failed(*error))
-		goto FAIL_SHADERS;
-
-	output->context = ctx;
-	output->handle = handle;
-	output->destroy_pass = destroy_render_pass;
-	output->prepare = prepare_render_pass;
-	output->run = run_render_pass;
-
-	toy_ok(error);
-	return;
-
-FAIL_SHADERS:
-	// Do nothing, leave the descriptor set layout to upper level code
-FAIL_DESCRIPTOR_SET:
-	destroy_framebuffers(vk_driver, ctx, alc);
-FAIL_FRAMEBUFFER:
-	vkDestroyRenderPass(dev, output->handle, vk_alc_cb);
-FAIL_RENDER_PASS_HANDLE:
-	toy_free_aligned(alc, ctx);
-FAIL_ALLOC_CONTEXT:
 	return;
 }
